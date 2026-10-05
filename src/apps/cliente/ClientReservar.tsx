@@ -65,7 +65,7 @@ function metaFor(type: string) {
 function getAvailableHours(
   date: string,
   espacioId: string,
-  reservations: { courtId: string; date: string; startTime: string }[]
+  reservations: { courtId?: string; date?: string; startTime: string }[]
 ) {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
@@ -156,7 +156,7 @@ export default function ClientReservar() {
     }
   }, [date, espacioId, availableHours.join(',')]);
 
-  const dayPrice = (id: string, type?: string) => {
+  const dayPrice = (id: string) => {
     const p = config.prices?.find((x) => x.courtId === id);
     return p?.dayPrice ?? espacios.find((e) => e.id === id)?.precioHora ?? 12000;
   };

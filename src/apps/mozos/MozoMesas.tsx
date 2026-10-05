@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMesasStore } from '../../store/useMesasStore';
-import { Icon } from '../../components/ui/Icon';
 import type { MesaEstado } from '../../types';
 
 const estadoStyle: Record<MesaEstado, string> = {

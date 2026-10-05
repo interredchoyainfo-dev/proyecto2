@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useMesasStore } from '../../store/useMesasStore';
 import { useStore } from '../../store/useStore';
 import { Icon } from '../../components/ui/Icon';
-import type { Mesa, MesaEstado } from '../../types';
+import type { Mesa } from '../../types';
 
 const estadoConfig: Record<string, { label: string; bg: string; border: string; text: string; icon: string }> = {
   libre: { label: 'Libre', bg: 'bg-emerald-500/10', border: 'border-emerald-500/40', text: 'text-emerald-600 dark:text-emerald-400', icon: 'check_circle' },
@@ -35,7 +35,6 @@ export default function MesasPage() {
   const rawMesas = useMesasStore((s) => s.mesas);
   const mesas = useMemo(() => (Array.isArray(rawMesas) ? rawMesas : []), [rawMesas]);
 
-  const updateMesaEstado = useMesasStore((s) => s.updateMesaEstado);
   const createPedido = useMesasStore((s) => s.createPedido);
   const getPedidoByMesa = useMesasStore((s) => s.getPedidoByMesa);
   const cerrarMesa = useMesasStore((s) => s.cerrarMesa);
@@ -186,6 +185,19 @@ export default function MesasPage() {
             <button onClick={() => setShowForm(false)} className="px-4 py-2 text-slate-500 text-sm hover:underline">
               Cancelar
             </button>
+            {editMesa && (
+              <button
+                onClick={() => {
+                  if (confirm(`¿Eliminar mesa ${editMesa.numero}?`)) {
+                    deleteMesa(editMesa.id);
+                    setShowForm(false);
+                  }
+                }}
+                className="px-4 py-2 text-rose-500 text-sm hover:underline ml-auto"
+              >
+                Eliminar mesa
+              </button>
+            )}
           </div>
         </div>
       )}

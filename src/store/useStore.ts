@@ -1,10 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { idbStorage } from './idbStorage';
 import {
   persistReserva,
   updateReservaDb,
-  persistProducto,
   persistCliente,
   persistCajaSesion,
   persistCajaMovimiento,
@@ -376,7 +374,8 @@ export const useStore = create<AppState>()(
         set((s) => ({
           reservations: [...s.reservations, full],
         }));
-        get().updateCourtStatus(res.courtId, 'reservada', id);
+        const courtOrEspacio = res.courtId || res.espacioId;
+        if (courtOrEspacio) get().updateCourtStatus(courtOrEspacio, 'reservada', id);
         persistReserva(full).catch(() => {});
       },
 
@@ -441,7 +440,7 @@ export const useStore = create<AppState>()(
           openedAt: new Date().toISOString(),
           openingAmount: amount,
           status: 'abierta' as const,
-          openedBy: get().currentUser.name,
+          openedBy: get().currentUser.name || get().currentUser.nombre || 'Admin',
         };
         set({
           cashSession: sesion,
@@ -477,7 +476,7 @@ export const useStore = create<AppState>()(
           id: `cm${Date.now()}`,
           sessionId: session.id,
           createdAt: new Date().toISOString(),
-          createdBy: get().currentUser.name,
+          createdBy: get().currentUser.name || get().currentUser.nombre || 'Admin',
         };
         set((s) => ({
           cashMovements: [...s.cashMovements, full],

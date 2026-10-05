@@ -53,10 +53,9 @@ export function CourtGrid() {
     return espacios.map((esp) => {
       const todayRes = reservations.filter(
         (r) =>
-          (r.courtId === esp.id || (r as any).espacioId === esp.id) &&
+          (r.courtId === esp.id || r.espacioId === esp.id) &&
           r.date === today &&
-          r.paymentStatus !== 'cancelado' &&
-          (r as any).estado !== 'cancelada'
+          r.estado !== 'cancelada'
       );
 
       let current = todayRes.find((r) => {

@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { idbStorage } from './idbStorage';
 import type { Mesa, Pedido, DetallePedido, MesaEstado, PedidoEstado, ItemEstado, Product } from '../types';
 import { useNotificationStore } from './useNotificationStore';
 import { notifyOtherTabs } from './crossTabSync';
@@ -39,6 +38,7 @@ interface MesasState {
     mozoId?: string;
     clienteNombre?: string;
     clienteTelefono?: string;
+    direccionDelivery?: string;
   }) => string; // returns pedidoId
   addItemToPedido: (pedidoId: string, product: Product, cantidad?: number, notas?: string) => void;
   updateItemEstado: (pedidoId: string, itemId: string, estado: ItemEstado) => void;
@@ -295,7 +295,7 @@ let _syncTimer: ReturnType<typeof setTimeout> | null = null;
 let _prevMesas: typeof useMesasStore extends { getState: () => infer S } ? S extends { mesas: infer M } ? M : never : never = useMesasStore.getState().mesas;
 let _prevPedidos: typeof useMesasStore extends { getState: () => infer S } ? S extends { pedidos: infer P } ? P : never : never = useMesasStore.getState().pedidos;
 
-useMesasStore.subscribe((state, prev) => {
+useMesasStore.subscribe((state) => {
   notifyOtherTabs();
 
   // Debounce DB persistence to avoid request storms

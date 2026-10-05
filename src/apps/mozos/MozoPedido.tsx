@@ -252,6 +252,16 @@ export default function MozoPedido() {
           </button>
         )}
         
+        {pedido.items.length > 0 && mesa?.estado !== 'cuenta_pedida' && (
+          <button
+            onClick={handlePedirCuenta}
+            className="w-full py-2.5 rounded-xl border border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/20 font-bold flex items-center justify-center gap-2"
+          >
+            <Icon name="receipt_long" />
+            Pedir Cuenta
+          </button>
+        )}
+
         <button
           onClick={handleCobrarYCerrar}
           className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold flex items-center justify-center gap-2"

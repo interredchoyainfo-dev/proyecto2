@@ -138,9 +138,6 @@ export default function CocinaKDS() {
       });
     }
     if (next === 'entregado') {
-      const allDone = cocinaItems(card.pedido).every(
-        (i) => i.estadoItem === 'entregado' || card.items.some((c) => c.id === i.id)
-      );
       // After state update, check - for simplicity mark pedido if all cocina items will be delivered
       const remaining = cocinaItems(card.pedido).filter(
         (i) => !card.items.some((c) => c.id === i.id) && i.estadoItem !== 'entregado'

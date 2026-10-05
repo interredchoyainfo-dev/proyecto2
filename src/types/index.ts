@@ -63,13 +63,15 @@ export interface Suscripcion {
 
 export interface User {
   id: string;
-  negocioId: string | null; // null = superadmin
+  negocioId?: string | null; // null = superadmin
   email: string;
-  nombre: string;
+  nombre?: string;
+  name?: string;
   telefono?: string;
-  rol: UserRole;
+  rol?: UserRole;
+  role?: UserRole;
   pinAcceso?: string;
-  isActive: boolean;
+  isActive?: boolean;
   avatar?: string;
 }
 
@@ -91,7 +93,7 @@ export type MesaEstado = 'libre' | 'ocupada' | 'reservada' | 'cuenta_pedida';
 
 export interface Espacio {
   id: string;
-  negocioId: string;
+  negocioId?: string;
   name: string;
   type: string; // cancha, salon, futbol, padel, tenis, quincho, piscina, etc.
   status: CourtStatus;
@@ -99,7 +101,7 @@ export interface Espacio {
   precioDia?: number;
   precioNoche?: number;
   currentReservationId?: string;
-  isActive: boolean;
+  isActive?: boolean;
   imageUrl?: string;
   description?: string;
   /** Si true, se usa capacidad y precio por persona */
@@ -108,9 +110,11 @@ export interface Espacio {
   precioPorPersona?: boolean;
 }
 
+export type Court = Espacio;
+
 export interface Client {
   id: string;
-  negocioId: string;
+  negocioId?: string;
   name: string;
   phone: string;
   email?: string;
@@ -123,8 +127,9 @@ export interface Client {
 
 export interface Reservation {
   id: string;
-  negocioId: string;
-  espacioId: string;
+  negocioId?: string;
+  espacioId?: string;
+  courtId?: string;
   clientId: string;
   clientName: string;
   clientPhone: string;
@@ -139,7 +144,7 @@ export interface Reservation {
   saldoPendiente?: number;
   qrToken?: string;
   notes?: string;
-  estado: 'pendiente' | 'confirmada' | 'en_curso' | 'completada' | 'cancelada';
+  estado?: 'pendiente' | 'confirmada' | 'en_curso' | 'completada' | 'cancelada';
   createdAt: string;
 }
 
@@ -167,7 +172,7 @@ export interface CartItem {
 
 export interface Mesa {
   id: string;
-  negocioId: string;
+  negocioId?: string;
   numero: number;
   sector: 'salon' | 'patio' | 'terraza' | 'canchas';
   capacidad: number;
@@ -177,7 +182,7 @@ export interface Mesa {
 
 export interface CashSession {
   id: string;
-  negocioId: string;
+  negocioId?: string;
   openedAt: string;
   closedAt?: string;
   openingAmount: number;
@@ -190,8 +195,8 @@ export interface CashSession {
 
 export interface CashMovement {
   id: string;
-  sessionId: string;
-  negocioId: string;
+  sessionId?: string;
+  negocioId?: string;
   type: CashMovementType;
   amount: number;
   method: PaymentMethod;
@@ -199,12 +204,13 @@ export interface CashMovement {
   categoria?: 'cobro_pedido' | 'cobro_reserva' | 'gasto_proveedor' | 'retiro';
   relatedReservationId?: string;
   relatedPedidoId?: string;
-  createdAt: string;
-  createdBy: string;
+  createdAt?: string;
+  createdBy?: string;
 }
 
 export interface PriceConfig {
-  espacioId: string;
+  espacioId?: string;
+  courtId?: string;
   dayPrice: number;
   nightPrice: number;
   nightStartHour: number;

@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useStore } from '../store/useStore';
 import { useMesasStore } from '../store/useMesasStore';
-import { useEspaciosStore } from '../store/useEspaciosStore';
-import { useOfertasStore } from '../store/useOfertasStore';
 import {
   initFirestoreRealtimeSync,
   firebaseSaveProducto,

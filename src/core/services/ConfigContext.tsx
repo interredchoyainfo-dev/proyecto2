@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import type { TenantConfig, ModuleId, Negocio } from '../../types';
+import type { TenantConfig, ModuleId } from '../../types';
 
 interface ConfigContextType {
   config: TenantConfig | null;

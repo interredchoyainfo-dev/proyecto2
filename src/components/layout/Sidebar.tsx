@@ -15,6 +15,7 @@ export function Sidebar() {
   const currentView = useStore((s) => s.currentView);
   const setView = useStore((s) => s.setView);
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useStore((s) => s.toggleSidebar);
 
   return (
     <aside

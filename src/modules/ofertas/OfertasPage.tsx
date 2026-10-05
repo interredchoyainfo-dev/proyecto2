@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useOfertasStore, isOfertaVigente, type Oferta } from '../../store/useOfertasStore';
+import { useOfertasStore, isOfertaVigente } from '../../store/useOfertasStore';
 import { Icon } from '../../components/ui/Icon';
 
 const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
@@ -7,7 +7,6 @@ const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
 export default function OfertasPage() {
   const ofertas = useOfertasStore((s) => s.ofertas);
   const addOferta = useOfertasStore((s) => s.addOferta);
-  const updateOferta = useOfertasStore((s) => s.updateOferta);
   const deleteOferta = useOfertasStore((s) => s.deleteOferta);
   const toggleActivo = useOfertasStore((s) => s.toggleActivo);
   const activas = useMemo(() => ofertas.filter((o) => isOfertaVigente(o)), [ofertas]);

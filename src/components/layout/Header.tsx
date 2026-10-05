@@ -57,11 +57,11 @@ export function Header() {
         {/* User */}
         <div className="flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-700">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-white text-sm font-bold">
-            {currentUser.name.charAt(0)}
+            {(currentUser.name || currentUser.nombre || 'U').charAt(0)}
           </div>
           <div className="hidden sm:block">
-            <p className="text-sm font-medium leading-tight">{currentUser.name}</p>
-            <p className="text-[10px] text-slate-500 capitalize">{currentUser.role}</p>
+            <p className="text-sm font-medium leading-tight">{currentUser.name || currentUser.nombre || 'Usuario'}</p>
+            <p className="text-[10px] text-slate-500 capitalize">{currentUser.role || currentUser.rol || 'admin'}</p>
           </div>
         </div>
       </div>
