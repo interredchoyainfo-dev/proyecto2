@@ -21,7 +21,15 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+# Environment
+.env
+.env.*
+!.env.example
+
+# Scratch and testing
+scratch/
+
 server/data/
 *.sqlite
 *.sqlite-*
+

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useSuperAdminStore, THEME_PRESETS, type TenantFull } from '../../store/useSuperAdminStore';
 import { Icon } from '../../components/ui/Icon';
@@ -20,8 +20,12 @@ export default function TenantsPage() {
   const toggleTenantActive = useSuperAdminStore((s) => s.toggleTenantActive);
   const deleteTenant = useSuperAdminStore((s) => s.deleteTenant);
   const resetTenantDataToZero = useSuperAdminStore((s) => s.resetTenantDataToZero);
+  const fetchTenants = useSuperAdminStore((s) => s.fetchTenants);
 
-  // New tenant state
+  useEffect(() => {
+    fetchTenants();
+  }, [fetchTenants]);
+
   const [showForm, setShowForm] = useState(false);
   const [nombre, setNombre] = useState('');
   const [slug, setSlug] = useState('');

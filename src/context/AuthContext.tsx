@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { User, UserRole } from '../types';
-import { useSuperAdminStore } from '../store/useSuperAdminStore';
+
+const API_BASE = 'http://localhost:3001';
 
 interface AuthContextType {
   user: User | null;
@@ -13,86 +14,50 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock users for demo
-const MOCK_USERS: (User & { password: string })[] = [
-  {
-    id: 'u-super',
-    negocioId: null,
-    email: 'admin',
-    password: 'Giolezana19',
-    nombre: 'Super Admin',
-    rol: 'superadmin',
-    isActive: true,
-    pinAcceso: '0000',
-  },
-  {
-    id: 'u-admin',
-    negocioId: 'giovanni',
-    email: 'admin',
-    password: 'admin',
-    nombre: 'Admin Giovanni',
-    rol: 'admin',
-    isActive: true,
-    pinAcceso: '1234',
-  },
-  {
-    id: 'u-mozo',
-    negocioId: 'giovanni',
-    email: 'mozo',
-    password: 'admin',
-    nombre: 'Carlos Mozo',
-    rol: 'mozo',
-    isActive: true,
-    pinAcceso: '5678',
-  },
-  {
-    id: 'u-cocina',
-    negocioId: 'giovanni',
-    email: 'cocina',
-    password: 'admin',
-    nombre: 'Ana Cocina',
-    rol: 'cocina',
-    isActive: true,
-    pinAcceso: '9012',
-  },
-  {
-    id: 'u-delivery',
-    negocioId: 'giovanni',
-    email: 'delivery',
-    password: 'admin',
-    nombre: 'Pedro Delivery',
-    rol: 'delivery',
-    isActive: true,
-    pinAcceso: '7890',
-  },
-  {
-    id: 'u-recepcion',
-    negocioId: 'giovanni',
-    email: 'recepcion',
-    password: 'admin',
-    nombre: 'Laura Recepción',
-    rol: 'recepcion',
-    isActive: true,
-    pinAcceso: '3456',
-  },
-];
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Restore session
+    // Restaurar sesión desde localStorage y validar token con el servidor
     const stored = localStorage.getItem('giovanni-auth');
-    if (stored) {
+    const token = localStorage.getItem('giovanni-token');
+
+    if (stored && token) {
       try {
-        const parsed = JSON.parse(stored);
-        setUser(parsed);
+        JSON.parse(stored); // Validate stored data is valid JSON
+        // Validar token contra el servidor antes de restaurar
+        fetch(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((res) => {
+            if (res.ok) return res.json();
+            throw new Error('Token inválido');
+          })
+          .then((data) => {
+            if (data?.user) {
+              setUser(data.user);
+            } else {
+              throw new Error('Sin usuario');
+            }
+          })
+          .catch(() => {
+            // Token expirado o inválido → limpiar sesión
+            localStorage.removeItem('giovanni-auth');
+            localStorage.removeItem('giovanni-token');
+            setUser(null);
+          })
+          .finally(() => setLoading(false));
       } catch {
         localStorage.removeItem('giovanni-auth');
+        localStorage.removeItem('giovanni-token');
+        setLoading(false);
       }
+    } else {
+      // Sin sesión almacenada
+      if (stored) localStorage.removeItem('giovanni-auth');
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = async (
@@ -103,96 +68,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = password.trim();
 
-    // 1. Intentar autenticar contra el backend real (/api/auth/login)
     try {
-      const res = await fetch('http://localhost:3001/api/auth/login', {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password: cleanPass, negocioId: tenantSlugOrId }),
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: cleanPass,
+          negocioId: tenantSlugOrId,
+        }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.user) {
-          setUser(data.user);
-          localStorage.setItem('giovanni-auth', JSON.stringify(data.user));
-          if (data.token) localStorage.setItem('giovanni-token', data.token);
-          return true;
-        }
+
+      const data = await res.json();
+
+      if (res.ok && data.success && data.user) {
+        setUser(data.user);
+        localStorage.setItem('giovanni-auth', JSON.stringify(data.user));
+        if (data.token) localStorage.setItem('giovanni-token', data.token);
+        return true;
       }
-    } catch {
-      // Backend offline o indisponible: continuar a verificación de contingencia
+
+      // El servidor respondió con un error explícito
+      console.warn('[Auth] Login rechazado por el servidor:', data.message || res.status);
+      return false;
+    } catch (err) {
+      console.error('[Auth] Error de red al intentar login:', err);
+      return false;
     }
-
-    // 2. SuperAdmin global check (contingencia)
-    if ((cleanEmail === 'admin' || cleanEmail === 'super') && cleanPass === 'Giolezana19') {
-      const superUser: User = {
-        id: 'u-super',
-        negocioId: null,
-        email: 'super',
-        nombre: 'Super Admin',
-        rol: 'superadmin',
-        isActive: true,
-      };
-      setUser(superUser);
-      localStorage.setItem('giovanni-auth', JSON.stringify(superUser));
-      return true;
-    }
-
-    // 3. Specific Tenant credentials check
-    if (tenantSlugOrId) {
-      const tenants = useSuperAdminStore.getState().tenants;
-      const targetTenant = tenants.find(
-        (t) =>
-          t.slug.toLowerCase() === tenantSlugOrId.toLowerCase() ||
-          t.id.toLowerCase() === tenantSlugOrId.toLowerCase()
-      );
-
-      if (targetTenant) {
-        const expectedUser = (targetTenant.adminUser || 'admin').toLowerCase();
-        const expectedPass = targetTenant.adminPassword || 'admin';
-
-        if (cleanEmail === expectedUser && cleanPass === expectedPass) {
-          const tenantAdmin: User = {
-            id: `admin-${targetTenant.id}`,
-            negocioId: targetTenant.slug,
-            email: targetTenant.adminUser || 'admin',
-            nombre: `Administrador de ${targetTenant.nombre}`,
-            rol: 'admin',
-            isActive: true,
-          };
-          setUser(tenantAdmin);
-          localStorage.setItem('giovanni-auth', JSON.stringify(tenantAdmin));
-          return true;
-        }
-
-        const staff = MOCK_USERS.find(
-          (u) =>
-            u.negocioId?.toLowerCase() === targetTenant.slug.toLowerCase() &&
-            u.email.toLowerCase() === cleanEmail &&
-            u.password === cleanPass
-        );
-        if (staff && staff.isActive) {
-          const { password: _, ...safeUser } = staff;
-          setUser(safeUser);
-          localStorage.setItem('giovanni-auth', JSON.stringify(safeUser));
-          return true;
-        }
-
-        return false;
-      }
-    }
-
-    const found = MOCK_USERS.find(
-      (u) => u.email.toLowerCase() === cleanEmail && u.password === cleanPass
-    );
-    if (found && found.isActive) {
-      const { password: _, ...safeUser } = found;
-      setUser(safeUser);
-      localStorage.setItem('giovanni-auth', JSON.stringify(safeUser));
-      return true;
-    }
-
-    return false;
   };
 
   const loginWithPin = async (
@@ -202,35 +104,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const targetNegocio = tenantSlugOrId?.toLowerCase() || 'giovanni';
 
     try {
-      const res = await fetch('http://localhost:3001/api/auth/pin', {
+      const res = await fetch(`${API_BASE}/api/auth/pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin, negocioId: targetNegocio }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.user) {
-          setUser(data.user);
-          localStorage.setItem('giovanni-auth', JSON.stringify(data.user));
-          if (data.token) localStorage.setItem('giovanni-token', data.token);
-          return true;
-        }
-      }
-    } catch {}
 
-    const found = MOCK_USERS.find(
-      (u) =>
-        u.pinAcceso === pin &&
-        u.isActive &&
-        (!u.negocioId || u.negocioId.toLowerCase() === targetNegocio)
-    );
-    if (found) {
-      const { password: _, ...safeUser } = found;
-      setUser(safeUser);
-      localStorage.setItem('giovanni-auth', JSON.stringify(safeUser));
-      return true;
+      const data = await res.json();
+
+      if (res.ok && data.success && data.user) {
+        setUser(data.user);
+        localStorage.setItem('giovanni-auth', JSON.stringify(data.user));
+        if (data.token) localStorage.setItem('giovanni-token', data.token);
+        return true;
+      }
+
+      console.warn('[Auth] PIN rechazado por el servidor:', data.message || res.status);
+      return false;
+    } catch (err) {
+      console.error('[Auth] Error de red al intentar login con PIN:', err);
+      return false;
     }
-    return false;
   };
 
   const logout = () => {

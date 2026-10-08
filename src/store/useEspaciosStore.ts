@@ -4,14 +4,7 @@ import { idbStorage } from "./idbStorage";
 import type { Espacio, EspacioStatus } from "../types";
 import { api } from "../lib/api";
 
-// Solo el negocio base giovanni cuenta con espacios iniciales de ejemplo
-const initialEspacios: Espacio[] = [
-  { id: "c1", negocioId: "giovanni", name: "Cancha 1 (Fútbol 5)", type: "futbol", status: "libre", precioHora: 15000, precioDia: 15000, precioNoche: 18000, isActive: true },
-  { id: "c2", negocioId: "giovanni", name: "Cancha 2 (Fútbol 7)", type: "futbol", status: "libre", precioHora: 15000, precioDia: 15000, precioNoche: 18000, isActive: true },
-  { id: "c3", negocioId: "giovanni", name: "Cancha 3 (Fútbol Pro)", type: "futbol", status: "libre", precioHora: 18000, precioDia: 18000, precioNoche: 22000, isActive: true },
-  { id: "c4", negocioId: "giovanni", name: "Cancha 4 (Pádel)", type: "padel", status: "libre", precioHora: 12000, precioDia: 12000, precioNoche: 15000, isActive: true },
-  { id: "s1", negocioId: "giovanni", name: "Salón de Eventos", type: "quincho", status: "libre", precioHora: 50000, precioDia: 50000, precioNoche: 60000, isActive: true },
-];
+
 
 interface EspaciosState {
   espacios: Espacio[];
@@ -29,7 +22,7 @@ interface EspaciosState {
 export const useEspaciosStore = create<EspaciosState>()(
   persist(
     (set, get) => ({
-      espacios: initialEspacios,
+      espacios: [],
 
       getEspaciosByTenant: (negocioId) => {
         const clean = (negocioId || "giovanni").toLowerCase().trim();
@@ -181,19 +174,16 @@ export const useEspaciosStore = create<EspaciosState>()(
       name: "giovanni-espacios-storage-v5",
       storage: createJSONStorage(() => idbStorage),
       migrate: (persistedState: any) => {
+        // Al migrar, limpiar cualquier dato hardcodeado legacy
         if (!persistedState || !Array.isArray(persistedState.espacios)) {
-          return { espacios: initialEspacios };
+          return { espacios: [] };
         }
-        // Limpieza de espacios demo erróneos en tenants que no son giovanni
+        // Eliminar IDs hardcodeados legacy (c1-c4, s1, op-*, demo-*)
+        const legacyIds = new Set(['c1', 'c2', 'c3', 'c4', 's1']);
         const cleaned = persistedState.espacios.filter((e: Espacio) => {
           if (!e || !e.id) return false;
-          const nid = (e.negocioId || "giovanni").toLowerCase().trim();
-          if (e.id.startsWith("op-") || e.id.startsWith("demo-") || e.id.startsWith("esp-oasispadel-1") || e.id.startsWith("esp-oasispadel-2")) {
-            return false;
-          }
-          if (nid !== "giovanni" && ["c1", "c2", "c3", "c4", "s1"].includes(e.id)) {
-            return false;
-          }
+          if (legacyIds.has(e.id)) return false;
+          if (e.id.startsWith('op-') || e.id.startsWith('demo-')) return false;
           return true;
         });
         return { ...persistedState, espacios: cleaned };

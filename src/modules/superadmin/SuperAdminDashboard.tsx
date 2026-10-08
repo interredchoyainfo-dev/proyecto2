@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useSuperAdminStore } from '../../store/useSuperAdminStore';
 import { Icon } from '../../components/ui/Icon';
@@ -6,7 +6,13 @@ import { Icon } from '../../components/ui/Icon';
 export default function SuperAdminDashboard() {
   const getStats = useSuperAdminStore((s) => s.getStats);
   const tenants = useSuperAdminStore((s) => s.tenants);
+  const fetchTenants = useSuperAdminStore((s) => s.fetchTenants);
   const stats = useMemo(() => getStats(), [getStats, tenants]);
+
+  useEffect(() => {
+    fetchTenants();
+  }, [fetchTenants]);
+
 
   const cards = [
     { label: 'Total Negocios', value: stats.totalTenants, icon: 'store', color: 'from-violet-500 to-purple-600', sub: 'Complejos activos & trial' },
