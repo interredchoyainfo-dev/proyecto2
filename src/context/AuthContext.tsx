@@ -18,8 +18,8 @@ const MOCK_USERS: (User & { password: string })[] = [
   {
     id: 'u-super',
     negocioId: null,
-    email: 'super',
-    password: 'admin',
+    email: 'admin',
+    password: 'Giolezana19',
     nombre: 'Super Admin',
     rol: 'superadmin',
     isActive: true,
@@ -104,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cleanPass = password.trim();
 
     // 1. SuperAdmin global check
-    if (cleanEmail === 'super' && cleanPass === 'admin') {
+    if ((cleanEmail === 'admin' || cleanEmail === 'super') && cleanPass === 'Giolezana19') {
       const superUser: User = {
         id: 'u-super',
         negocioId: null,
