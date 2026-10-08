@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { User, UserRole } from '../types';
+import { useSuperAdminStore } from '../store/useSuperAdminStore';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
-  loginWithPin: (pin: string) => Promise<boolean>;
+  login: (email: string, password: string, tenantSlugOrId?: string) => Promise<boolean>;
+  loginWithPin: (pin: string, tenantSlugOrId?: string) => Promise<boolean>;
   logout: () => void;
   hasRole: (...roles: UserRole[]) => boolean;
 }
@@ -94,9 +95,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (
+    email: string,
+    password: string,
+    tenantSlugOrId?: string
+  ): Promise<boolean> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = password.trim();
+
+    // 1. SuperAdmin global check
+    if (cleanEmail === 'super' && cleanPass === 'admin') {
+      const superUser: User = {
+        id: 'u-super',
+        negocioId: null,
+        email: 'super',
+        nombre: 'Super Admin',
+        rol: 'superadmin',
+        isActive: true,
+      };
+      setUser(superUser);
+      localStorage.setItem('giovanni-auth', JSON.stringify(superUser));
+      return true;
+    }
+
+    // 2. Specific Tenant credentials check
+    if (tenantSlugOrId) {
+      const tenants = useSuperAdminStore.getState().tenants;
+      const targetTenant = tenants.find(
+        (t) =>
+          t.slug.toLowerCase() === tenantSlugOrId.toLowerCase() ||
+          t.id.toLowerCase() === tenantSlugOrId.toLowerCase()
+      );
+
+      if (targetTenant) {
+        const expectedUser = (targetTenant.adminUser || 'admin').toLowerCase();
+        const expectedPass = targetTenant.adminPassword || 'admin';
+
+        if (cleanEmail === expectedUser && cleanPass === expectedPass) {
+          const tenantAdmin: User = {
+            id: `admin-${targetTenant.id}`,
+            negocioId: targetTenant.slug,
+            email: targetTenant.adminUser || 'admin',
+            nombre: `Administrador de ${targetTenant.nombre}`,
+            rol: 'admin',
+            isActive: true,
+          };
+          setUser(tenantAdmin);
+          localStorage.setItem('giovanni-auth', JSON.stringify(tenantAdmin));
+          return true;
+        }
+
+        // Allow staff of this specific tenant
+        const staff = MOCK_USERS.find(
+          (u) =>
+            u.negocioId?.toLowerCase() === targetTenant.slug.toLowerCase() &&
+            u.email.toLowerCase() === cleanEmail &&
+            u.password === cleanPass
+        );
+        if (staff && staff.isActive) {
+          const { password: _, ...safeUser } = staff;
+          setUser(safeUser);
+          localStorage.setItem('giovanni-auth', JSON.stringify(safeUser));
+          return true;
+        }
+
+        // Credentials did NOT match this specific tenant!
+        return false;
+      }
+    }
+
+    // 3. Fallback for root / login
     const found = MOCK_USERS.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+      (u) => u.email.toLowerCase() === cleanEmail && u.password === cleanPass
     );
     if (found && found.isActive) {
       const { password: _, ...safeUser } = found;
@@ -104,11 +174,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('giovanni-auth', JSON.stringify(safeUser));
       return true;
     }
+
     return false;
   };
 
-  const loginWithPin = async (pin: string): Promise<boolean> => {
-    const found = MOCK_USERS.find((u) => u.pinAcceso === pin && u.isActive);
+  const loginWithPin = async (
+    pin: string,
+    tenantSlugOrId?: string
+  ): Promise<boolean> => {
+    const targetNegocio = tenantSlugOrId?.toLowerCase() || 'giovanni';
+    const found = MOCK_USERS.find(
+      (u) =>
+        u.pinAcceso === pin &&
+        u.isActive &&
+        (!u.negocioId || u.negocioId.toLowerCase() === targetNegocio)
+    );
     if (found) {
       const { password: _, ...safeUser } = found;
       setUser(safeUser);

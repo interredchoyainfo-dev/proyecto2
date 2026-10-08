@@ -22,16 +22,17 @@ import type {
 } from '../types';
 
 const initialCourts: Court[] = [
-  { id: 'c1', name: 'Cancha 1', type: 'cancha', status: 'libre' },
-  { id: 'c2', name: 'Cancha 2', type: 'cancha', status: 'reservada', currentReservationId: 'r1' },
-  { id: 'c3', name: 'Cancha 3', type: 'cancha', status: 'en_juego', currentReservationId: 'r2' },
-  { id: 'c4', name: 'Cancha 4', type: 'cancha', status: 'libre' },
-  { id: 's1', name: 'Salón de Eventos', type: 'salon', status: 'mantenimiento' },
+  { id: 'c1', negocioId: 'giovanni', name: 'Cancha 1', type: 'cancha', status: 'libre' },
+  { id: 'c2', negocioId: 'giovanni', name: 'Cancha 2', type: 'cancha', status: 'reservada', currentReservationId: 'r1' },
+  { id: 'c3', negocioId: 'giovanni', name: 'Cancha 3', type: 'cancha', status: 'en_juego', currentReservationId: 'r2' },
+  { id: 'c4', negocioId: 'giovanni', name: 'Cancha 4', type: 'cancha', status: 'libre' },
+  { id: 's1', negocioId: 'giovanni', name: 'Salón de Eventos', type: 'salon', status: 'mantenimiento' },
 ];
 
 const initialClients: Client[] = [
   {
     id: 'cl1',
+    negocioId: 'giovanni',
     name: 'Juan Pérez',
     phone: '11-2345-6789',
     email: 'juan@email.com',
@@ -43,6 +44,7 @@ const initialClients: Client[] = [
   },
   {
     id: 'cl2',
+    negocioId: 'giovanni',
     name: 'María González',
     phone: '11-9876-5432',
     isFrequent: false,
@@ -53,6 +55,7 @@ const initialClients: Client[] = [
   },
   {
     id: 'cl3',
+    negocioId: 'giovanni',
     name: 'Carlos Rodríguez',
     phone: '11-5555-1234',
     isFrequent: true,
@@ -68,6 +71,7 @@ const today = new Date().toISOString().split('T')[0];
 const initialReservations: Reservation[] = [
   {
     id: 'r1',
+    negocioId: 'giovanni',
     courtId: 'c2',
     clientId: 'cl1',
     clientName: 'Juan Pérez',
@@ -83,6 +87,7 @@ const initialReservations: Reservation[] = [
   },
   {
     id: 'r2',
+    negocioId: 'giovanni',
     courtId: 'c3',
     clientId: 'cl2',
     clientName: 'María González',
@@ -100,7 +105,7 @@ const initialReservations: Reservation[] = [
 
 const initialProducts: Product[] = [
   // CAFETERÍA / DESAYUNOS
-  { id: '1000', name: 'Promo merienda', price: 3500, stock: 50, category: 'cafeteria', icon: 'coffee', destinoComanda: 'bar', disponible: true },
+  { id: '1000', negocioId: 'giovanni', name: 'Promo merienda', price: 3500, stock: 50, category: 'cafeteria', icon: 'coffee', destinoComanda: 'bar', disponible: true },
   { id: '1001', name: 'De campo (desayuno-merienda)', price: 4000, stock: 50, category: 'cafeteria', icon: 'coffee', destinoComanda: 'cocina', disponible: true },
   { id: '1002', name: 'Promo licuado', price: 5000, stock: 50, category: 'cafeteria', icon: 'local_cafe', destinoComanda: 'bar', disponible: true },
   { id: '1003', name: 'Promo baguette', price: 6000, stock: 40, category: 'cafeteria', icon: 'bakery_dining', destinoComanda: 'cocina', disponible: true },
@@ -293,6 +298,9 @@ interface AppState {
   addReservation: (res: Omit<Reservation, 'id' | 'createdAt'>) => void;
   updateReservation: (id: string, data: Partial<Reservation>) => void;
   products: Product[];
+  addProduct: (product: Omit<Product, 'id'>) => void;
+  updateProduct: (id: string, data: Partial<Product>) => void;
+  deleteProduct: (id: string) => void;
   cart: CartItem[];
   addToCart: (product: Product, qty?: number) => void;
   removeFromCart: (productId: string) => void;
@@ -301,12 +309,19 @@ interface AppState {
   checkoutCart: (method: PaymentMethod, reservationId?: string) => void;
   cashSession: CashSession | null;
   cashMovements: CashMovement[];
-  openCash: (amount: number) => void;
+  openCash: (amount: number, negocioId?: string) => void;
   closeCash: (closingAmount: number) => void;
   addCashMovement: (mov: Omit<CashMovement, 'id' | 'sessionId' | 'createdAt' | 'createdBy'>) => void;
   config: SystemConfig;
   updateConfig: (cfg: Partial<SystemConfig>) => void;
-  getTodayStats: () => {
+  // ─── Tenant-scoped getters ─────────────────────────────
+  getCourtsByTenant: (negocioId: string) => Court[];
+  getClientsByTenant: (negocioId: string) => Client[];
+  getReservationsByTenant: (negocioId: string) => Reservation[];
+  getProductsByTenant: (negocioId: string) => Product[];
+  getCashSessionByTenant: (negocioId: string) => CashSession | null;
+  getCashMovementsByTenant: (negocioId: string) => CashMovement[];
+  getTodayStats: (negocioId?: string) => {
     revenue: number;
     occupiedSlots: number;
     newClients: number;
@@ -351,6 +366,7 @@ export const useStore = create<AppState>()(
         const newClient = {
           ...client,
           id,
+          negocioId: (client as any).negocioId || 'giovanni',
           createdAt: new Date().toISOString().split('T')[0],
           totalReservations: 0,
           noShows: 0,
@@ -370,7 +386,7 @@ export const useStore = create<AppState>()(
 
       addReservation: (res) => {
         const id = `r${Date.now()}`;
-        const full = { ...res, id, createdAt: new Date().toISOString() };
+        const full = { ...res, id, negocioId: res.negocioId || 'giovanni', createdAt: new Date().toISOString() };
         set((s) => ({
           reservations: [...s.reservations, full],
         }));
@@ -414,6 +430,17 @@ export const useStore = create<AppState>()(
 
       clearCart: () => set({ cart: [] }),
 
+      addProduct: (product) => {
+        const id = `prod-${Date.now()}`;
+        set((s) => ({ products: [...s.products, { ...product, id }] }));
+      },
+      updateProduct: (id, data) => {
+        set((s) => ({ products: s.products.map((p) => (p.id === id ? { ...p, ...data } : p)) }));
+      },
+      deleteProduct: (id) => {
+        set((s) => ({ products: s.products.filter((p) => p.id !== id) }));
+      },
+
       checkoutCart: (method, reservationId) => {
         const { cart, cashSession } = get();
         if (!cashSession || cart.length === 0) return;
@@ -434,9 +461,10 @@ export const useStore = create<AppState>()(
         });
       },
 
-      openCash: (amount) => {
-        const sesion = {
+      openCash: (amount, negocioId) => {
+        const sesion: CashSession = {
           id: `cs${Date.now()}`,
+          negocioId: negocioId || 'giovanni',
           openedAt: new Date().toISOString(),
           openingAmount: amount,
           status: 'abierta' as const,
@@ -486,8 +514,41 @@ export const useStore = create<AppState>()(
 
       updateConfig: (cfg) => set((s) => ({ config: { ...s.config, ...cfg } })),
 
-      getTodayStats: () => {
-        const { reservations, cashMovements, clients, cashSession } = get();
+      // ─── Tenant-scoped getters ─────────────────────────────
+      getCourtsByTenant: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        return get().courts.filter((c) => (c.negocioId || 'giovanni').toLowerCase() === clean);
+      },
+      getClientsByTenant: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        return get().clients.filter((c) => (c.negocioId || 'giovanni').toLowerCase() === clean);
+      },
+      getReservationsByTenant: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        return get().reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() === clean);
+      },
+      getProductsByTenant: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        return get().products.filter((p) => (p.negocioId || 'giovanni').toLowerCase() === clean);
+      },
+      getCashSessionByTenant: (negocioId) => {
+        const session = get().cashSession;
+        if (!session) return null;
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        if ((session.negocioId || 'giovanni').toLowerCase() === clean) return session;
+        return null;
+      },
+      getCashMovementsByTenant: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        return get().cashMovements.filter((m) => (m.negocioId || 'giovanni').toLowerCase() === clean);
+      },
+
+      getTodayStats: (negocioId) => {
+        const { cashSession } = get();
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        const reservations = get().getReservationsByTenant(clean);
+        const clients = get().getClientsByTenant(clean);
+        const cashMovements = get().getCashMovementsByTenant(clean);
         const todayStr = new Date().toISOString().split('T')[0];
         const todayRes = reservations.filter((r) => r.date === todayStr);
         const revenue =
@@ -497,7 +558,8 @@ export const useStore = create<AppState>()(
         const newClients = clients.filter((c) => c.createdAt === todayStr).length;
         const ingresos = cashMovements.filter((m) => m.type === 'ingreso').reduce((sum, m) => sum + m.amount, 0);
         const egresos = cashMovements.filter((m) => m.type === 'egreso').reduce((sum, m) => sum + m.amount, 0);
-        const cashBalance = cashSession ? cashSession.openingAmount + ingresos - egresos : 0;
+        const sessionForTenant = cashSession && (cashSession.negocioId || 'giovanni').toLowerCase() === clean ? cashSession : null;
+        const cashBalance = sessionForTenant ? sessionForTenant.openingAmount + ingresos - egresos : 0;
         return { revenue, occupiedSlots, newClients, cashBalance };
       },
     }),

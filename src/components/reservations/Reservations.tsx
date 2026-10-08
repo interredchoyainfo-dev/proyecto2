@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useStore } from '../../store/useStore';
+import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { Icon } from '../ui/Icon';
 import { ReservationModal } from './ReservationModal';
 import { format, parseISO, isSameDay, startOfWeek, addDays, isSameMonth } from 'date-fns';
@@ -16,6 +17,7 @@ const paymentBadge: Record<string, string> = {
 export function Reservations() {
   const reservations = useStore((s) => s.reservations);
   const courts = useStore((s) => s.courts);
+  const allEspacios = useEspaciosStore((s) => s.espacios);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedRes, setSelectedRes] = useState<typeof reservations[0] | null>(null);
   const [mode, setMode] = useState<CalendarMode>('day');
@@ -48,7 +50,7 @@ export function Reservations() {
   const activas = filtered.filter((r) => !isPast(r));
   const historial = filtered.filter((r) => isPast(r));
 
-  const courtName = (id: string) => courts.find((c) => c.id === id)?.name ?? id;
+  const courtName = (id: string) => allEspacios.find((c) => c.id === id)?.name ?? courts.find((c) => c.id === id)?.name ?? id;
 
   return (
     <div className="space-y-6">

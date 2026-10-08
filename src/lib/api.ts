@@ -1,10 +1,41 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
+let activeTenant: string = 'giovanni';
+
+/** Establece explícitamente el tenant activo para las llamadas a la API */
+export function setApiTenant(tenantId: string) {
+  if (tenantId) {
+    activeTenant = tenantId.toLowerCase().trim();
+  }
+}
+
+/** Obtiene el tenant actual según el estado en memoria o la URL del navegador */
+export function getApiTenant(): string {
+  if (typeof window !== 'undefined') {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    if (parts.length > 0 && parts[0] !== 'superadmin' && parts[0] !== 'login') {
+      return parts[0].toLowerCase().trim();
+    }
+  }
+  return activeTenant || 'giovanni';
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+  const currentTenant = getApiTenant();
+  const sep = path.includes('?') ? '&' : '?';
+  const urlWithTenant = `${API_URL}${path}${sep}negocioId=${encodeURIComponent(currentTenant)}`;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'x-negocio-id': currentTenant,
+    ...(options?.headers as Record<string, string>),
+  };
+
+  const res = await fetch(urlWithTenant, {
     ...options,
+    headers,
   });
+
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`API ${res.status}: ${text || res.statusText}`);
@@ -13,8 +44,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ ok: boolean }>('/health'),
-  sync: () => request<SyncPayload>('/sync'),
+  health: () => request<{ ok: boolean; tenantId: string; database: string }>('/health'),
+  sync: (tenantId?: string) => {
+    if (tenantId) setApiTenant(tenantId);
+    return request<SyncPayload>('/sync');
+  },
+
+  // Inicialización de nuevo tenant / base de datos independiente
+  initTenant: (tenantId: string) =>
+    request<{ ok: boolean; database: string }>(`/tenants/${tenantId}/init`, { method: 'POST' }),
 
   getProductos: () => request<any[]>('/productos'),
   createProducto: (data: any) => request('/productos', { method: 'POST', body: JSON.stringify(data) }),
@@ -67,6 +105,7 @@ export const api = {
 };
 
 export interface SyncPayload {
+  tenantId?: string;
   productos: any[];
   mesas: any[];
   espacios: any[];

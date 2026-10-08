@@ -1,6 +1,9 @@
+import { api } from '../lib/api';
+import { doc, setDoc } from 'firebase/firestore';
+import { firestore } from '../lib/firebase';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ModuleId, Negocio } from '../types';
+import type { ModuleId, Negocio, ThemeConfig } from '../types';
 
 export interface TenantFull extends Negocio {
   plan: 'trial' | 'basic' | 'pro' | 'enterprise';
@@ -9,9 +12,54 @@ export interface TenantFull extends Negocio {
   mesasCount: number;
   espaciosCount: number;
   lastActive?: string;
+  adminUser?: string;
+  adminPassword?: string;
 }
 
-const ALL_MODULES: { id: ModuleId; label: string; description: string }[] = [
+export const THEME_PRESETS = [
+  {
+    id: 'superadmin',
+    label: 'Púrpura SuperAdmin (SaaS)',
+    primaryColor: '#8B5CF6',
+    accentColor: '#A78BFA',
+    secondaryColor: '#121722',
+    previewBg: 'from-violet-600 to-purple-800',
+  },
+  {
+    id: 'gold',
+    label: 'Dorado Eléctrico (Original)',
+    primaryColor: '#FBBF24',
+    accentColor: '#F59E0B',
+    secondaryColor: '#EC6A06',
+    previewBg: 'from-amber-400 to-yellow-600',
+  },
+  {
+    id: 'emerald',
+    label: 'Verde Césped Deportivo',
+    primaryColor: '#10B981',
+    accentColor: '#34D399',
+    secondaryColor: '#059669',
+    previewBg: 'from-emerald-500 to-teal-700',
+  },
+  {
+    id: 'blue',
+    label: 'Azul Padel Pro',
+    primaryColor: '#3B82F6',
+    accentColor: '#60A5FA',
+    secondaryColor: '#1D4ED8',
+    previewBg: 'from-blue-500 to-indigo-700',
+  },
+  {
+    id: 'red',
+    label: 'Rojo Fuego & Piel',
+    primaryColor: '#EF4444',
+    accentColor: '#F87171',
+    secondaryColor: '#DC2626',
+    previewBg: 'from-red-500 to-rose-700',
+  },
+];
+
+export const ALL_MODULES: { id: ModuleId; label: string; description: string }[] = [
   { id: 'bar', label: 'Bar / Mesas', description: 'Gestión de mesas, pedidos y salón' },
   { id: 'reservas', label: 'Reservas', description: 'Canchas, turnos y reservas online' },
   { id: 'cocina', label: 'Cocina KDS', description: 'Pantalla de comandas para cocina' },
@@ -33,6 +81,13 @@ const initialTenants: TenantFull[] = [
     id: 'giovanni',
     slug: 'giovanni',
     nombre: 'Complejo Giovanni',
+    descripcion: 'Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional. Elevamos tu juego dentro y fuera de la cancha.',
+    theme: {
+      primaryColor: '#FBBF24',
+      accentColor: '#F59E0B',
+      secondaryColor: '#EC6A06',
+      preset: 'gold',
+    },
     isActive: true,
     createdAt: '2024-01-15',
     plan: 'pro',
@@ -40,6 +95,8 @@ const initialTenants: TenantFull[] = [
     mesasCount: 10,
     espaciosCount: 5,
     lastActive: new Date().toISOString(),
+    adminUser: 'admin',
+    adminPassword: 'admin',
     modulos: {
       bar: true, reservas: true, cocina: true, caja: true, inventario: true,
       iot: true, analytics_ai: false, delivery: true, mozos: true, escuela: false,
@@ -47,9 +104,42 @@ const initialTenants: TenantFull[] = [
     },
   },
   {
+    id: 'oasispadel',
+    slug: 'oasispadel',
+    nombre: 'Oasis Padel Club',
+    descripcion: 'Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional. Elevamos tu juego dentro y fuera de la cancha.',
+    theme: {
+      primaryColor: '#8B5CF6',
+      accentColor: '#A78BFA',
+      secondaryColor: '#121722',
+      preset: 'superadmin',
+    },
+    isActive: true,
+    createdAt: '2026-03-01',
+    plan: 'pro',
+    usuariosCount: 5,
+    mesasCount: 6,
+    espaciosCount: 4,
+    lastActive: new Date().toISOString(),
+    adminUser: 'oasisadmin',
+    adminPassword: 'oasis123',
+    modulos: {
+      bar: true, reservas: true, cocina: false, caja: true, inventario: false,
+      iot: false, analytics_ai: false, delivery: false, mozos: false, escuela: false,
+      torneos: true, access_control: false, smart_center: false, finanzas: true, empleados: false,
+    },
+  },
+  {
     id: 'demo',
     slug: 'demo',
     nombre: 'Complejo Demo',
+    descripcion: 'Complejo deportivo modelo para demostraciones y entrenamientos.',
+    theme: {
+      primaryColor: '#3B82F6',
+      accentColor: '#60A5FA',
+      secondaryColor: '#1D4ED8',
+      preset: 'blue',
+    },
     isActive: true,
     createdAt: '2025-06-01',
     plan: 'basic',
@@ -57,6 +147,8 @@ const initialTenants: TenantFull[] = [
     mesasCount: 6,
     espaciosCount: 2,
     lastActive: '2026-09-20T10:00:00Z',
+    adminUser: 'demoadmin',
+    adminPassword: 'demo123',
     modulos: {
       bar: true, reservas: true, cocina: false, caja: true, inventario: false,
       iot: false, analytics_ai: false, delivery: false, mozos: false, escuela: false,
@@ -67,6 +159,13 @@ const initialTenants: TenantFull[] = [
     id: 'padelpro',
     slug: 'padelpro',
     nombre: 'Padel Pro Center',
+    descripcion: 'Centro de alto rendimiento de pádel profesional con canchas panorámicas.',
+    theme: {
+      primaryColor: '#8B5CF6',
+      accentColor: '#A78BFA',
+      secondaryColor: '#121722',
+      preset: 'superadmin',
+    },
     isActive: true,
     createdAt: '2025-03-10',
     plan: 'enterprise',
@@ -84,6 +183,13 @@ const initialTenants: TenantFull[] = [
     id: 'clubnorte',
     slug: 'clubnorte',
     nombre: 'Club Norte',
+    descripcion: 'Club deportivo familiar con canchas de fútbol, pádel y confitería.',
+    theme: {
+      primaryColor: '#10B981',
+      accentColor: '#34D399',
+      secondaryColor: '#059669',
+      preset: 'emerald',
+    },
     isActive: false,
     createdAt: '2024-11-01',
     plan: 'trial',
@@ -105,7 +211,31 @@ interface SuperAdminState {
   toggleTenantActive: (id: string) => void;
   toggleModule: (tenantId: string, moduleId: ModuleId) => void;
   updatePlan: (tenantId: string, plan: TenantFull['plan']) => void;
-  createTenant: (data: { nombre: string; slug: string; plan: TenantFull['plan'] }) => void;
+  updateTenant: (
+    id: string,
+    data: Partial<{
+      nombre: string;
+      slug: string;
+      plan: TenantFull['plan'];
+      descripcion: string;
+      theme: ThemeConfig;
+      isActive: boolean;
+      adminUser: string;
+      adminPassword: string;
+      modulos: Record<ModuleId, boolean>;
+    }>
+  ) => void;
+  deleteTenant: (id: string) => void;
+  createTenant: (data: {
+    nombre: string;
+    slug: string;
+    plan: TenantFull['plan'];
+    descripcion?: string;
+    theme?: ThemeConfig;
+    adminUser?: string;
+    adminPassword?: string;
+    modulos?: Record<ModuleId, boolean>;
+  }) => void;
   getStats: () => {
     totalTenants: number;
     activeTenants: number;
@@ -123,15 +253,21 @@ export const useSuperAdminStore = create<SuperAdminState>()(
       toggleTenantActive: (id) =>
         set((s) => ({
           tenants: s.tenants.map((t) =>
-            t.id === id ? { ...t, isActive: !t.isActive } : t
+            t.id === id || t.slug === id ? { ...t, isActive: !t.isActive } : t
           ),
         })),
 
       toggleModule: (tenantId, moduleId) =>
         set((s) => ({
           tenants: s.tenants.map((t) =>
-            t.id === tenantId
-              ? { ...t, modulos: { ...t.modulos, [moduleId]: !t.modulos[moduleId] } }
+            t.id === tenantId || t.slug === tenantId
+              ? {
+                  ...t,
+                  modulos: {
+                    ...t.modulos,
+                    [moduleId]: !t.modulos[moduleId],
+                  },
+                }
               : t
           ),
         })),
@@ -139,19 +275,67 @@ export const useSuperAdminStore = create<SuperAdminState>()(
       updatePlan: (tenantId, plan) =>
         set((s) => ({
           tenants: s.tenants.map((t) =>
-            t.id === tenantId ? { ...t, plan } : t
+            t.id === tenantId || t.slug === tenantId ? { ...t, plan } : t
           ),
         })),
 
+      updateTenant: (id, data) =>
+        set((s) => ({
+          tenants: s.tenants.map((t) =>
+            t.id === id || t.slug === id
+              ? {
+                  ...t,
+                  ...data,
+                  slug: data.slug
+                    ? data.slug.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+                    : t.slug,
+                }
+              : t
+          ),
+        })),
+
+      deleteTenant: (id) =>
+        set((s) => ({
+          tenants: s.tenants.filter((t) => t.id !== id && t.slug !== id),
+        })),
+
       createTenant: (data) => {
-        const id = data.slug.toLowerCase().replace(/\s+/g, '-');
-        const exists = get().tenants.some((t) => t.slug === id);
+        const id = data.slug.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const exists = get().tenants.some((t) => t.slug === id || t.id === id);
         if (exists) return;
 
-        const defaultMods = ALL_MODULES.reduce((acc, m) => {
+        const defaultMods = data.modulos || ALL_MODULES.reduce((acc, m) => {
           acc[m.id] = ['bar', 'reservas', 'caja'].includes(m.id);
           return acc;
         }, {} as Record<ModuleId, boolean>);
+
+        const defaultTheme: ThemeConfig = data.theme || {
+          primaryColor: '#8B5CF6',
+          accentColor: '#A78BFA',
+          secondaryColor: '#121722',
+          preset: 'superadmin',
+        };
+
+        const defaultDesc =
+          data.descripcion ||
+          'Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional. Elevamos tu juego dentro y fuera de la cancha.';
+
+        const adminUser = data.adminUser?.trim() || `admin_${id}`;
+        const adminPassword = data.adminPassword?.trim() || `${id}123`;
+
+        // Auto-creación y provisión de base de datos SQLite y Firestore para este negocio
+        try {
+          api.initTenant(id).catch((err) => console.warn(`[MultiTenant] Error creando SQLite para ${id}:`, err));
+          setDoc(doc(firestore, 'negocios', id, 'configuracion', 'general'), {
+            nombre: data.nombre,
+            slug: id,
+            plan: data.plan,
+            estado: 'activo',
+            createdAt: new Date().toISOString()
+          }, { merge: true }).catch((err) => console.warn(`[MultiTenant] Error creando Firestore para ${id}:`, err));
+        } catch (e) {
+          console.warn('[MultiTenant] Error provisionando tenant:', e);
+        }
 
         set((s) => ({
           tenants: [
@@ -160,12 +344,16 @@ export const useSuperAdminStore = create<SuperAdminState>()(
               id,
               slug: id,
               nombre: data.nombre,
+              descripcion: defaultDesc,
+              theme: defaultTheme,
               isActive: true,
               createdAt: new Date().toISOString().split('T')[0],
               plan: data.plan,
               usuariosCount: 1,
               mesasCount: 0,
               espaciosCount: 0,
+              adminUser,
+              adminPassword,
               modulos: defaultMods,
               lastActive: new Date().toISOString(),
             },

@@ -1,4 +1,5 @@
 import { useStore } from '../../store/useStore';
+import { useConfig } from '../../core/services/ConfigContext';
 import { Icon } from '../ui/Icon';
 import type { ViewId } from '../../types';
 
@@ -17,6 +18,12 @@ export function Sidebar() {
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
 
+  let tenantName = 'Complejo Deportivo';
+  try {
+    const { config } = useConfig();
+    if (config?.negocio.nombre) tenantName = config.negocio.nombre;
+  } catch {}
+
   return (
     <aside
       className={`fixed left-0 top-0 z-40 h-screen bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 flex flex-col ${
@@ -30,7 +37,7 @@ export function Sidebar() {
         </div>
         {!sidebarCollapsed && (
           <div className="overflow-hidden">
-            <h1 className="font-bold text-sm leading-tight truncate">Complejo Giovanni</h1>
+            <h1 className="font-bold text-sm leading-tight truncate">{tenantName}</h1>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">Admin</p>
           </div>
         )}

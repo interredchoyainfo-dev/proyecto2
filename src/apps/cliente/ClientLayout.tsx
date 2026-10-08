@@ -1,83 +1,133 @@
 import { Outlet, NavLink, useParams } from 'react-router-dom';
+import { useConfig } from '../../core/services/ConfigContext';
 import { Icon } from '../../components/ui/Icon';
 
 export default function ClientLayout() {
   const { negocioId } = useParams();
-
-  const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex-1 flex flex-col items-center py-2 text-[10px] font-medium gap-0.5 ${
-      isActive ? 'text-amber-400' : 'text-slate-500'
-    }`;
+  const { config } = useConfig();
+  const tenantName = config?.negocio.nombre || 'Complejo Deportivo';
+  const accentColor = config?.theme?.accentColor || config?.theme?.primaryColor || '#FBBF24';
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex flex-col max-w-lg mx-auto">
-      <header className="sticky top-0 z-30 bg-[#0a0a0f]/95 backdrop-blur border-b border-white/5 px-4 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
-            <Icon name="bolt" className="text-black" size={18} />
+    <div className="min-h-screen flex flex-col" style={{ background: '#131318', color: '#e4e1e9' }}>
+      {/* Fixed Header */}
+      <header
+        className="fixed top-0 inset-x-0 z-50 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.4)]"
+        style={{ background: 'rgba(19,19,24,0.85)' }}
+      >
+        <div className="h-16 px-4 flex items-center justify-between max-w-lg mx-auto">
+          {/* Logo */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: `${accentColor}25` }}
+            >
+              <Icon name="bolt" size={22} style={{ color: accentColor }} />
+            </div>
+            <div className="flex flex-col justify-center min-w-0">
+              <span
+                className="uppercase leading-tight tracking-tight font-black text-[16px] truncate"
+                style={{ color: '#fff' }}
+                title={tenantName}
+              >
+                {tenantName}
+              </span>
+              <span
+                className="uppercase tracking-widest leading-none font-extrabold"
+                style={{ color: accentColor, fontSize: '10px', letterSpacing: '0.08em' }}
+              >
+                CENTRO DEPORTIVO
+              </span>
+            </div>
           </div>
-          <div>
-            <p className="font-black text-sm tracking-tight leading-none">
-              COMPLEJO <span className="text-amber-400">GIOVANNI</span>
-            </p>
-            <p className="text-[9px] text-slate-500 uppercase tracking-wider">Centro deportivo</p>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            <button
+              aria-label="Notificaciones"
+              className="w-11 h-11 flex items-center justify-center rounded-full relative transition-colors hover:opacity-80"
+              style={{ color: '#e4e1e9' }}
+            >
+              <Icon name="notifications" size={22} />
+              <span
+                className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full"
+                style={{ background: '#ec6a06' }}
+              />
+            </button>
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ background: '#ffc174' }}
+            >
+              <Icon name="person" size={18} style={{ color: '#472a00' }} />
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button className="p-2 rounded-full hover:bg-white/5">
-            <Icon name="notifications" size={20} className="text-slate-400" />
-          </button>
-          <button className="p-2 rounded-full hover:bg-white/5">
-            <Icon name="menu" size={20} className="text-slate-400" />
-          </button>
         </div>
       </header>
 
-      <main className="flex-1 pb-20">
+      {/* Page content */}
+      <main className="flex-1 pt-16 pb-24 max-w-lg mx-auto w-full">
         <Outlet />
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 max-w-lg mx-auto bg-[#12121a]/95 backdrop-blur border-t border-white/5 flex z-30 px-1">
-        <NavLink to={`/${negocioId}`} end className={linkClass}>
-          {({ isActive }) => (
-            <>
-              <span className={`p-1.5 rounded-xl ${isActive ? 'bg-amber-400 text-black' : ''}`}>
-                <Icon name="home" size={20} />
-              </span>
+      {/* Fixed Bottom Nav */}
+      <nav
+        className="fixed bottom-0 inset-x-0 z-50 backdrop-blur-xl shadow-[0_-4px_24px_rgba(0,0,0,0.5)]"
+        style={{ background: 'rgba(19,19,24,0.92)' }}
+      >
+        <div className="flex justify-around items-center h-20 px-1 max-w-lg mx-auto">
+          <NavLink
+            to={`/${negocioId}`}
+            end
+            className="flex flex-col items-center justify-center gap-1 w-16 h-14 transition-colors font-extrabold"
+            style={({ isActive }) => ({
+              color: isActive ? '#FBBF24' : '#64748B',
+            })}
+          >
+            <Icon name="home" size={24} />
+            <span style={{ fontSize: '10px', letterSpacing: '0.08em', fontWeight: 800, textTransform: 'uppercase' }}>
               Inicio
-            </>
-          )}
-        </NavLink>
-        <NavLink to={`/${negocioId}/reservar`} className={linkClass}>
-          {({ isActive }) => (
-            <>
-              <span className={`p-1.5 rounded-xl ${isActive ? 'bg-amber-400 text-black' : ''}`}>
-                <Icon name="calendar_month" size={20} />
-              </span>
+            </span>
+          </NavLink>
+
+          <NavLink
+            to={`/${negocioId}/reservar`}
+            className="flex flex-col items-center justify-center gap-1 w-16 h-14 transition-colors font-extrabold"
+            style={({ isActive }) => ({
+              color: isActive ? '#FBBF24' : '#64748B',
+            })}
+          >
+            <Icon name="sports_tennis" size={24} />
+            <span style={{ fontSize: '10px', letterSpacing: '0.08em', fontWeight: 800, textTransform: 'uppercase' }}>
               Reservar
-            </>
-          )}
-        </NavLink>
-        <NavLink to={`/${negocioId}/menu`} className={linkClass}>
-          {({ isActive }) => (
-            <>
-              <span className={`p-1.5 rounded-xl ${isActive ? 'bg-amber-400 text-black' : ''}`}>
-                <Icon name="restaurant" size={20} />
-              </span>
+            </span>
+          </NavLink>
+
+          <NavLink
+            to={`/${negocioId}/menu`}
+            className="flex flex-col items-center justify-center gap-1 w-16 h-14 transition-colors font-extrabold"
+            style={({ isActive }) => ({
+              color: isActive ? '#FBBF24' : '#64748B',
+            })}
+          >
+            <Icon name="restaurant" size={24} />
+            <span style={{ fontSize: '10px', letterSpacing: '0.08em', fontWeight: 800, textTransform: 'uppercase' }}>
               Bar
-            </>
-          )}
-        </NavLink>
-        <NavLink to={`/${negocioId}/mis-reservas`} className={linkClass}>
-          {({ isActive }) => (
-            <>
-              <span className={`p-1.5 rounded-xl ${isActive ? 'bg-amber-400 text-black' : ''}`}>
-                <Icon name="person" size={20} />
-              </span>
-              Cuenta
-            </>
-          )}
-        </NavLink>
+            </span>
+          </NavLink>
+
+          <NavLink
+            to={`/${negocioId}/mis-reservas`}
+            className="flex flex-col items-center justify-center gap-1 w-16 h-14 transition-colors font-extrabold"
+            style={({ isActive }) => ({
+              color: isActive ? '#FBBF24' : '#64748B',
+            })}
+          >
+            <Icon name="person" size={24} />
+            <span style={{ fontSize: '10px', letterSpacing: '0.08em', fontWeight: 800, textTransform: 'uppercase' }}>
+              Perfil
+            </span>
+          </NavLink>
+        </div>
       </nav>
     </div>
   );

@@ -29,15 +29,18 @@ export type ModuleId =
 
 export interface ThemeConfig {
   primaryColor?: string;
+  accentColor?: string;
   secondaryColor?: string;
   logoUrl?: string;
   fontFamily?: string;
+  preset?: string;
 }
 
 export interface Negocio {
   id: string;
   slug: string;
   nombre: string;
+  descripcion?: string;
   logoUrl?: string;
   theme?: ThemeConfig;
   isActive: boolean;

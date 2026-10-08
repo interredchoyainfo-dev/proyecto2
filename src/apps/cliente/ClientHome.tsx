@@ -1,67 +1,112 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useConfig } from '../../core/services/ConfigContext';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { useOfertasStore, isOfertaVigente } from '../../store/useOfertasStore';
 import { Icon } from '../../components/ui/Icon';
 
-const SPACE_META: Record<string, { tag: string; blurb: string; gradient: string; img: string }> = {
+// Design tokens from reference
+const C = {
+  surface: '#131318',
+  surfaceCard: '#121722',
+  surfaceContainer: '#1f1f25',
+  surfaceContainerHigh: '#2a292f',
+  surfaceContainerHighest: '#35343a',
+  surfaceContainerLowest: '#0e0e13',
+  surfaceBase: '#0A0A0F',
+  surfaceElevated: '#1A202E',
+  accent: '#FBBF24',
+  primary: '#ffc174',
+  primaryContainer: '#f59e0b',
+  secondaryContainer: '#ec6a06',
+  sportsPitch: '#10B981',
+  textPrimary: '#FFFFFF',
+  textSecondary: '#94A3B8',
+  textMuted: '#64748B',
+  onSurface: '#e4e1e9',
+  onSurfaceVariant: '#d8c3ad',
+  actionViolet: '#6D28D9',
+  error: '#ffb4ab',
+  errorContainer: '#93000a',
+};
+
+const SPACE_META: Record<string, { tag: string; blurb: string; img: string; accentColor: string }> = {
   quincho: {
-    tag: 'EVENTOS',
-    blurb: 'Disfruta de tu lugar en familia',
-    gradient: 'from-amber-900/80 to-black',
+    tag: 'SOCIAL & FESTEJOS',
+    blurb: 'Asadores premium, vajilla y sonido profesional',
+    accentColor: '#FBBF24',
     img: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80',
   },
   padel: {
     tag: 'DEPORTES INTENSOS',
-    blurb: 'Canchas vitradas',
-    gradient: 'from-blue-900/80 to-black',
+    blurb: 'Canchas vidriadas panorámicas · Césped azul WPT',
+    accentColor: '#f59e0b',
     img: 'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=800&q=80',
   },
   futbol: {
     tag: 'DEPORTES INTENSOS',
-    blurb: 'Césped sintético',
-    gradient: 'from-emerald-900/80 to-black',
+    blurb: 'Césped FIFA Forbex 50mm con caucho cryo',
+    accentColor: '#10B981',
     img: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&q=80',
   },
   salon: {
-    tag: 'EVENTOS',
-    blurb: 'El lugar ideal para tu evento',
-    gradient: 'from-violet-900/80 to-black',
+    tag: 'SOCIAL & FESTEJOS',
+    blurb: 'Asadores premium, vajilla y sonido profesional',
+    accentColor: '#FBBF24',
     img: 'https://images.unsplash.com/photo-1519167758481-83f29da75953?w=800&q=80',
   },
   cancha: {
-    tag: 'DEPORTES',
-    blurb: 'Listo para jugar',
-    gradient: 'from-emerald-900/80 to-black',
+    tag: 'DEPORTES INTENSOS',
+    blurb: 'Césped sintético premium',
+    accentColor: '#10B981',
     img: 'https://images.unsplash.com/photo-1529900748604-07564a03e7a6?w=800&q=80',
   },
   tenis: {
-    tag: 'DEPORTES',
+    tag: 'DEPORTES INTENSOS',
     blurb: 'Cancha profesional',
-    gradient: 'from-sky-900/80 to-black',
+    accentColor: '#f59e0b',
     img: 'https://images.unsplash.com/photo-1622279457486-62dcc4a431d6?w=800&q=80',
+  },
+  voley: {
+    tag: 'DEPORTES INTENSOS',
+    blurb: 'Arena blanca sílice pura · 2 canchas pro',
+    accentColor: '#FBBF24',
+    img: 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=800&q=80',
+  },
+  piscina: {
+    tag: 'RELAX & RECUPERACIÓN',
+    blurb: 'Área climatizada con solárium · Vestuarios VIP',
+    accentColor: '#38bdf8',
+    img: 'https://images.unsplash.com/photo-1530549387789-4c1017266635?w=800&q=80',
   },
 };
 
 function metaFor(type: string) {
-  return SPACE_META[type] || {
-    tag: 'ESPACIO',
-    blurb: 'Reservá tu turno',
-    gradient: 'from-slate-900/80 to-black',
-    img: 'https://images.unsplash.com/photo-1461896836934-ffe607ba3671?w=800&q=80',
-  };
+  return (
+    SPACE_META[type] || {
+      tag: 'ESPACIO',
+      blurb: 'Reservá tu turno',
+      accentColor: '#FBBF24',
+      img: 'https://images.unsplash.com/photo-1461896836934-ffe607ba3671?w=800&q=80',
+    }
+  );
 }
 
 export default function ClientHome() {
   const { negocioId } = useParams();
+  const { config } = useConfig();
+  const tenantName = config?.negocio.nombre || 'Complejo Deportivo';
+  const currentNegocio = (negocioId || 'giovanni').toLowerCase();
   const allEspacios = useEspaciosStore((s) => s.espacios);
-  const espacios = useMemo(() => allEspacios.filter((e) => e.isActive), [allEspacios]);
+  const espacios = useMemo(
+    () => allEspacios.filter((e) => e.isActive && (e.negocioId || 'giovanni').toLowerCase() === currentNegocio),
+    [allEspacios, currentNegocio]
+  );
   const allOfertas = useOfertasStore((s) => s.ofertas);
   const ofertas = useMemo(() => allOfertas.filter((o) => isOfertaVigente(o)), [allOfertas]);
-  const [weather, setWeather] = useState({ temp: 20, desc: 'Parcialmente nublado', hum: 0 });
+  const [weather, setWeather] = useState({ temp: 20, desc: 'Parcialmente nublado', hum: 65, code: 2 });
 
   useEffect(() => {
-    // Widget clima (Open-Meteo, sin API key) — fallback fijo si falla
     fetch(
       'https://api.open-meteo.com/v1/forecast?latitude=-34.6&longitude=-58.4&current=temperature_2m,relative_humidity_2m,weather_code'
     )
@@ -74,114 +119,246 @@ export default function ClientHome() {
           2: 'Parcialmente nublado',
           3: 'Nublado',
           61: 'Lluvia',
-          63: 'Lluvia',
+          63: 'Lluvia intensa',
           80: 'Chaparrones',
         };
         setWeather({
           temp: Math.round(d.current?.temperature_2m ?? 20),
           desc: descs[code] || 'Parcialmente nublado',
-          hum: d.current?.relative_humidity_2m ?? 0,
+          hum: d.current?.relative_humidity_2m ?? 65,
+          code,
         });
       })
       .catch(() => {});
   }, []);
 
-  return (
-    <div className="pb-6">
-      {/* HERO */}
-      <section className="relative px-5 pt-8 pb-10 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-amber-500/10 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute -right-20 top-0 w-64 h-64 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
-        <p className="text-amber-400 text-[10px] font-bold uppercase tracking-[0.25em] mb-3 flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-          Complejo deportivo premium
-        </p>
-        <h1 className="text-4xl font-black leading-[1.05] tracking-tight mb-3">
-          COMPLEJO
-          <br />
-          GIOVANNI
-          <br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-orange-500">
-            TU LUGAR
-          </span>
-        </h1>
-        <p className="text-slate-400 text-sm max-w-xs mb-6 leading-relaxed">
-          Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional.
-          Elevamos tu juego dentro y fuera de la cancha.
-        </p>
+  const weatherIcon = weather.code === 0 ? 'wb_sunny' : weather.code >= 61 ? 'rainy' : 'partly_cloudy_day';
 
-        {/* Weather widget */}
-        <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4 mb-5 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-sky-500/20 flex items-center justify-center">
-            <Icon name="partly_cloudy_day" size={28} className="text-sky-300" />
+  return (
+    <div style={{ background: C.surface, color: C.onSurface }}>
+      {/* ── HERO ── */}
+      <section className="relative px-4 pt-5 pb-8 overflow-hidden">
+        {/* Ambient glows */}
+        <div
+          className="absolute -top-16 -right-12 w-64 h-64 rounded-full blur-3xl pointer-events-none"
+          style={{ background: 'rgba(245,158,11,0.12)' }}
+        />
+        <div
+          className="absolute top-24 -left-16 w-48 h-48 rounded-full blur-2xl pointer-events-none"
+          style={{ background: 'rgba(236,106,6,0.08)' }}
+        />
+
+        <div className="relative z-10 flex flex-col gap-3">
+          {/* Premium badge */}
+          <div
+            className="inline-flex items-center gap-2 self-start py-1 px-3 rounded-full backdrop-blur-md shadow-sm"
+            style={{ background: 'rgba(42,41,47,0.85)' }}
+          >
+            <span
+              className="w-2 h-2 rounded-full animate-pulse"
+              style={{ background: C.accent }}
+            />
+            <span
+              className="font-extrabold uppercase tracking-widest"
+              style={{ color: C.accent, fontSize: '10px', letterSpacing: '0.1em' }}
+            >
+              Complejo Deportivo Premium
+            </span>
           </div>
-          <div className="flex-1">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Estado del tiempo</p>
-            <p className="text-xs text-sky-300 font-semibold uppercase">{weather.desc}</p>
+
+          {/* Hero headline */}
+          <div className="flex flex-col mt-1">
+            <h1
+              className="uppercase font-black tracking-tight leading-tight"
+              style={{ fontSize: '30px', lineHeight: '34px', letterSpacing: '-0.02em', color: C.textPrimary }}
+            >
+              {tenantName}
+            </h1>
+            <span
+              className="uppercase font-black tracking-tight leading-none mt-1"
+              style={{
+                fontSize: '26px',
+                lineHeight: '30px',
+                letterSpacing: '-0.02em',
+                background: `linear-gradient(to right, ${C.accent}, ${C.primaryContainer}, ${C.secondaryContainer})`,
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              TU LUGAR DEPORTIVO
+            </span>
           </div>
-          <div className="text-right">
-            <p className="text-3xl font-black tabular-nums">
-              {weather.temp}
-              <span className="text-base text-slate-500">°C</span>
-            </p>
-            <p className="text-[10px] text-slate-500">{weather.hum}% humedad</p>
+
+          {/* Subtitle */}
+          <p className="text-sm max-w-sm leading-relaxed mt-1" style={{ color: C.textSecondary }}>
+            {config?.negocio.descripcion || 'Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional. Elevamos tu juego dentro y fuera de la cancha.'}
+          </p>
+
+          {/* Weather card */}
+          <div
+            className="mt-2 w-full rounded-xl p-3 flex items-center justify-between shadow-md backdrop-blur-lg"
+            style={{ background: 'rgba(18,23,34,0.92)' }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-12 h-12 rounded-xl flex items-center justify-center shadow-inner flex-shrink-0"
+                style={{ background: C.surfaceContainerHigh }}
+              >
+                <Icon name={weatherIcon} size={28} style={{ color: C.accent }} />
+              </div>
+              <div className="flex flex-col">
+                <span
+                  className="uppercase font-bold tracking-wider"
+                  style={{ color: C.textMuted, fontSize: '10px', letterSpacing: '0.08em' }}
+                >
+                  Estado del Tiempo
+                </span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-extrabold uppercase tracking-tight text-lg" style={{ color: C.textPrimary }}>
+                    {weather.desc}
+                  </span>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: C.sportsPitch }} />
+                  <span className="font-semibold text-xs" style={{ color: C.sportsPitch }}>
+                    Canchas Óptimas
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col items-end text-right">
+              <span className="font-extrabold leading-none" style={{ fontSize: '32px', color: C.textPrimary }}>
+                {weather.temp}
+                <span className="text-lg" style={{ color: C.textMuted }}>°C</span>
+              </span>
+              <span className="text-xs mt-1" style={{ color: C.textSecondary }}>
+                {weather.hum}% humedad
+              </span>
+            </div>
+          </div>
+
+          {/* CTA */}
+          <div className="mt-1 flex flex-col gap-2">
+            <Link
+              to={`/${negocioId}/reservar`}
+              className="w-full h-14 rounded-xl shadow-xl flex items-center justify-center gap-2 font-black uppercase tracking-wider text-lg active:scale-[0.98] transition-transform"
+              style={{ background: C.textPrimary, color: C.surfaceBase }}
+            >
+              <span>Reservar Ahora</span>
+              <Icon name="arrow_forward" size={22} />
+            </Link>
+            <div className="flex items-center justify-center gap-4 py-1" style={{ color: C.textMuted }}>
+              <div className="flex items-center gap-1 text-xs">
+                <Icon name="check_circle" size={16} style={{ color: C.sportsPitch }} />
+                <span>Confirmación al instante</span>
+              </div>
+              <div className="flex items-center gap-1 text-xs">
+                <Icon name="lock" size={16} style={{ color: C.accent }} />
+                <span>Sin seña previa</span>
+              </div>
+            </div>
           </div>
         </div>
-
-        <Link
-          to={`/${negocioId}/reservar`}
-          className="flex items-center justify-center gap-2 w-full py-3.5 rounded-2xl bg-white text-black font-bold text-sm active:scale-[0.98] transition-transform"
-        >
-          RESERVAR <Icon name="arrow_forward" size={18} />
-        </Link>
       </section>
 
-      {/* ESPACIOS */}
-      <section className="px-5 mb-8">
+      {/* ── NUESTROS ESPACIOS ── */}
+      <section className="flex flex-col px-4 py-3">
         <div className="flex items-end justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-black tracking-tight">
-              NUESTROS <span className="text-amber-400">ESPACIOS</span>
-            </h2>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <span
+                className="uppercase font-extrabold tracking-tight text-[22px]"
+                style={{ color: C.textPrimary }}
+              >
+                Nuestros
+              </span>
+              <span
+                className="uppercase font-extrabold tracking-tight text-[22px]"
+                style={{ color: C.accent }}
+              >
+                Espacios
+              </span>
+            </div>
+            <span
+              className="uppercase tracking-wider mt-0.5"
+              style={{ color: C.textMuted, fontSize: '10px', fontWeight: 800 }}
+            >
               Campos homologados para alta competición
-            </p>
+            </span>
           </div>
-          <Link to={`/${negocioId}/reservar`} className="text-[10px] text-amber-400 font-bold uppercase">
-            Ver disponibilidad →
+          <Link
+            to={`/${negocioId}/reservar`}
+            className="flex items-center gap-1 uppercase font-bold tracking-wider hover:opacity-80 transition-opacity"
+            style={{ color: C.accent, fontSize: '10px' }}
+          >
+            <span>Disponibilidad</span>
+            <Icon name="arrow_forward" size={14} />
           </Link>
         </div>
 
-        <div className="space-y-4">
-          {espacios.map((e, i) => {
+        <div className="flex flex-col gap-4">
+          {espacios.map((e) => {
             const m = metaFor(e.type);
             return (
               <Link
                 key={e.id}
                 to={`/${negocioId}/reservar?espacio=${e.id}`}
-                className="group relative block rounded-3xl overflow-hidden h-52 border border-white/5"
-                style={{ animationDelay: `${i * 80}ms` }}
+                className="group relative rounded-xl overflow-hidden shadow-lg active:scale-[0.99] transition-transform"
+                style={{ background: C.surfaceCard }}
               >
-                <img
-                  src={e.imageUrl || m.img}
-                  alt={e.name}
-                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                  onError={(ev) => {
-                    if (m.img && (ev.target as HTMLImageElement).src !== m.img) {
-                      (ev.target as HTMLImageElement).src = m.img;
-                    }
-                  }}
-                />
-                <div className={`absolute inset-0 bg-gradient-to-t ${m.gradient}`} />
-                <div className="absolute top-3 left-3 flex gap-2">
-                  <span className="px-2.5 py-1 rounded-full bg-black/50 backdrop-blur text-[9px] font-bold uppercase tracking-wider border border-white/10">
-                    {m.tag}
-                  </span>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 p-4">
-                  <div className="w-8 h-0.5 bg-amber-400 mb-2" />
-                  <h3 className="text-xl font-black uppercase tracking-tight">{e.name}</h3>
-                  <p className="text-xs text-slate-300">{m.blurb}</p>
+                <div className="relative w-full h-52 bg-cover bg-center overflow-hidden">
+                  <img
+                    src={e.imageUrl || m.img}
+                    alt={e.name}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    onError={(ev) => {
+                      if (m.img && (ev.target as HTMLImageElement).src !== m.img)
+                        (ev.target as HTMLImageElement).src = m.img;
+                    }}
+                  />
+                  <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${C.surfaceCard} 0%, rgba(18,23,34,0.4) 50%, transparent 100%)` }} />
+                  {/* Badges */}
+                  <div className="absolute top-3 left-3 flex items-center gap-2">
+                    <span
+                      className="px-2.5 py-1 rounded-full backdrop-blur-md font-extrabold uppercase"
+                      style={{ background: 'rgba(10,10,15,0.8)', color: C.textPrimary, fontSize: '10px' }}
+                    >
+                      {m.tag}
+                    </span>
+                    <span
+                      className="px-2.5 py-1 rounded-full backdrop-blur-md font-black uppercase"
+                      style={{ background: 'rgba(16,185,129,0.9)', color: C.surfaceBase, fontSize: '10px' }}
+                    >
+                      Turnos Hoy
+                    </span>
+                  </div>
+                  {/* Bottom info */}
+                  <div className="absolute bottom-3 inset-x-3 flex items-end justify-between">
+                    <div className="flex flex-col">
+                      <div className="w-8 h-1 rounded-full mb-1" style={{ background: m.accentColor }} />
+                      <h3
+                        className="font-black uppercase tracking-tight"
+                        style={{ fontSize: '22px', color: C.textPrimary }}
+                      >
+                        {e.name}
+                      </h3>
+                      <span className="text-xs font-medium" style={{ color: C.onSurfaceVariant }}>
+                        {m.blurb}
+                      </span>
+                    </div>
+                    <div
+                      className="backdrop-blur-md px-3 py-1.5 rounded-lg flex flex-col items-end"
+                      style={{ background: 'rgba(26,32,46,0.92)' }}
+                    >
+                      <span className="uppercase" style={{ color: C.textMuted, fontSize: '10px', fontWeight: 800 }}>
+                        Turno 60m
+                      </span>
+                      <span className="font-bold text-[17px] leading-none" style={{ color: C.accent }}>
+                        {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(
+                          e.precioHora || 12000
+                        )}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </Link>
             );
@@ -189,91 +366,273 @@ export default function ClientHome() {
         </div>
       </section>
 
-      {/* PROMO */}
+      {/* ── PROMO BANNER ── */}
       {ofertas.length > 0 && (
-        <section className="px-5 mb-6">
-          <div className="rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-700 to-purple-900 p-5 border border-white/10 relative overflow-hidden">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-violet-200 flex items-center gap-1 mb-2">
-              <Icon name="local_offer" size={12} /> Destacado
-            </span>
-            <h3 className="text-2xl font-black mb-1">PROMOCIÓN SEMANAL</h3>
-            <p className="text-sm text-violet-100 mb-4">
-              {ofertas[0].titulo} — {ofertas[0].descripcion}
-            </p>
-            <Link
-              to={`/${negocioId}/reservar`}
-              className="inline-flex px-5 py-2.5 rounded-xl bg-white text-violet-900 font-bold text-sm"
+        <section className="px-4 py-2">
+          <div
+            className="relative overflow-hidden rounded-xl p-5 shadow-xl"
+            style={{ background: `linear-gradient(135deg, ${C.actionViolet} 0%, rgba(109,40,217,0.9) 60%, ${C.surfaceCard} 100%)` }}
+          >
+            <div
+              className="absolute -right-8 -bottom-8 w-36 h-36 rounded-full blur-2xl pointer-events-none"
+              style={{ background: 'rgba(245,158,11,0.2)' }}
+            />
+            <div className="flex items-center gap-2 mb-2">
+              <Icon name="local_offer" size={18} style={{ color: C.accent }} />
+              <span
+                className="uppercase tracking-wider font-black"
+                style={{ color: C.accent, fontSize: '10px', letterSpacing: '0.08em' }}
+              >
+                Destacado Gastronómico
+              </span>
+            </div>
+            <h2
+              className="uppercase font-black tracking-tight leading-tight"
+              style={{ fontSize: '28px', color: C.textPrimary }}
             >
-              VER OFERTAS
-            </Link>
+              PROMOCIÓN SEMANAL
+            </h2>
+            <p className="text-sm mt-1 font-medium" style={{ color: C.onSurface }}>
+              {ofertas[0].titulo} —{' '}
+              <span className="font-bold" style={{ color: C.accent }}>
+                {ofertas[0].descripcion}
+              </span>
+            </p>
+            <div className="mt-4 flex items-center justify-between">
+              <div className="flex items-center gap-2" style={{ color: C.textMuted }}>
+                <Icon name="schedule" size={18} style={{ color: C.textSecondary }} />
+                <span className="text-xs font-medium" style={{ color: C.textSecondary }}>
+                  Miér a Dom · 19:00 a 22:30hs
+                </span>
+              </div>
+              <Link
+                to={`/${negocioId}/menu`}
+                className="px-5 py-2.5 rounded-lg font-black uppercase tracking-wider shadow-md active:scale-95 transition-transform flex items-center gap-1.5 text-sm"
+                style={{ background: C.textPrimary, color: C.surfaceBase }}
+              >
+                <span>Ver Ofertas</span>
+                <Icon name="restaurant" size={18} />
+              </Link>
+            </div>
           </div>
         </section>
       )}
 
-      {/* Cards extras */}
-      <section className="px-5 space-y-4 mb-6">
-        <div className="rounded-3xl bg-[#14141c] border border-white/5 p-5">
-          <div className="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center mb-3">
-            <Icon name="star" className="text-black" />
+      {/* ── FEATURE CARDS ── */}
+      <section className="flex flex-col gap-4 px-4 py-4">
+        {/* Eventos únicos */}
+        <div
+          className="rounded-xl p-5 flex flex-col gap-3 shadow-md relative overflow-hidden"
+          style={{ background: C.surfaceCard }}
+        >
+          <div className="flex items-center justify-between">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-inner"
+              style={{ background: 'rgba(224,168,0,0.18)', color: C.accent }}
+            >
+              <Icon name="star" size={26} style={{ color: C.accent }} />
+            </div>
+            <span
+              className="uppercase tracking-wider"
+              style={{ color: C.textMuted, fontSize: '10px', fontWeight: 800 }}
+            >
+              Social & Empresas
+            </span>
           </div>
-          <h3 className="text-lg font-black mb-1">
-            EVENTOS <span className="text-slate-500">ÚNICOS</span>
-          </h3>
-          <p className="text-sm text-slate-400 mb-3">
-            Celebrá cumpleaños, eventos corporativos o torneos privados con nosotros.
-          </p>
+          <div className="flex flex-col mt-1">
+            <h3 className="font-black uppercase tracking-tight text-[22px]" style={{ color: C.textPrimary }}>
+              EVENTOS <span className="font-medium" style={{ color: C.textSecondary }}>ÚNICOS</span>
+            </h3>
+            <p className="text-sm mt-1" style={{ color: C.textSecondary }}>
+              Celebrá cumpleaños, torneos corporativos cerrados y jornadas de integración con coordinación y catering profesional.
+            </p>
+          </div>
           <a
-            href="https://wa.me/5491100000000?text=Hola!%20Quiero%20info%20de%20eventos%20en%20Complejo%20Giovanni"
+            href={`https://wa.me/5491100000000?text=${encodeURIComponent(`Hola! Quiero info de eventos en ${tenantName}`)}`}
             target="_blank"
             rel="noreferrer"
-            className="text-amber-400 text-xs font-bold uppercase tracking-wider"
+            className="mt-2 inline-flex items-center gap-2 font-extrabold uppercase tracking-wide text-[17px] hover:underline"
+            style={{ color: C.accent }}
           >
-            Contactar por WhatsApp →
+            <span>Contactar por WhatsApp</span>
+            <Icon name="chat" size={18} />
           </a>
         </div>
 
-        <div className="rounded-3xl bg-[#14141c] border border-white/5 p-5">
-          <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center mb-3">
-            <Icon name="swords" className="text-red-400" />
+        {/* Zona de Desafío */}
+        <div
+          className="rounded-xl p-5 flex flex-col gap-3 shadow-md relative overflow-hidden"
+          style={{ background: C.surfaceCard }}
+        >
+          <div className="flex items-center justify-between">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-inner"
+              style={{ background: 'rgba(147,0,10,0.28)', color: C.error }}
+            >
+              <Icon name="sports_kabaddi" size={26} style={{ color: C.error }} />
+            </div>
+            <span
+              className="px-2.5 py-1 rounded-full font-bold uppercase tracking-wider text-[10px]"
+              style={{ background: 'rgba(147,0,10,0.35)', color: C.error }}
+            >
+              Matchmaking Activo
+            </span>
           </div>
-          <h3 className="text-lg font-black mb-1">ZONA DE DESAFÍO</h3>
-          <p className="text-sm text-slate-400 mb-3">
-            ¿Te falta uno para el partido? Entrá a la bolsa de jugadores y encontrá tu próximo reto.
-          </p>
-          <button className="w-full py-3 rounded-xl bg-red-600 font-bold text-sm">
-            INGRESAR AL DESAFÍO
+          <div className="flex flex-col mt-1">
+            <h3 className="font-black uppercase tracking-tight text-[22px]" style={{ color: C.textPrimary }}>
+              ZONA DE DESAFÍO
+            </h3>
+            <p className="text-sm mt-1" style={{ color: C.textSecondary }}>
+              ¿Te falta un jugador para el fútbol o pareja para el pádel? Entrá a la bolsa de jugadores libres y encontrá tu próximo reto competitivo.
+            </p>
+          </div>
+          {/* Players counter */}
+          <div
+            className="flex items-center gap-3 py-2 px-3 rounded-lg"
+            style={{ background: 'rgba(31,31,37,0.6)' }}
+          >
+            <div className="flex -space-x-2">
+              {['MG', 'FR'].map((init, i) => (
+                <div
+                  key={i}
+                  className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs"
+                  style={{ background: i === 0 ? C.primaryContainer : C.secondaryContainer, color: i === 0 ? '#2a1700' : '#fff' }}
+                >
+                  {init}
+                </div>
+              ))}
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs"
+                style={{ background: C.sportsPitch, color: C.surfaceBase }}
+              >
+                +9
+              </div>
+            </div>
+            <span className="text-xs font-medium" style={{ color: C.textSecondary }}>
+              11 jugadores buscando partido ahora
+            </span>
+          </div>
+          <button
+            className="mt-1 w-full h-12 rounded-lg font-black uppercase tracking-wider shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2 text-[17px]"
+            style={{ background: C.error, color: C.surfaceBase }}
+          >
+            <span>Ingresar al Desafío</span>
+            <Icon name="swords" size={20} />
           </button>
         </div>
 
-        <div className="rounded-3xl bg-[#14141c] border border-white/5 p-5">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center mb-3">
-            <Icon name="emoji_events" className="text-blue-400" />
+        {/* Escuela de fútbol */}
+        <div
+          className="rounded-xl p-5 flex flex-col gap-3 shadow-md relative overflow-hidden"
+          style={{ background: C.surfaceCard }}
+        >
+          <div className="flex items-center justify-between">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-inner"
+              style={{ background: C.surfaceContainerHigh }}
+            >
+              <Icon name="military_tech" size={26} style={{ color: '#ffddb8' }} />
+            </div>
+            <span
+              className="uppercase tracking-wider"
+              style={{ color: C.textMuted, fontSize: '10px', fontWeight: 800 }}
+            >
+              Edades 5 a 16 años
+            </span>
           </div>
-          <h3 className="text-lg font-black mb-1">ESCUELA DE FÚTBOL</h3>
-          <p className="text-sm text-slate-400 mb-3">
-            Formación integral para los futuros cracks. Entrenamientos dinámicos y valores deportivos.
-          </p>
-          <button className="w-full py-3 rounded-xl bg-blue-600 font-bold text-sm">
-            INFORMACIÓN E INSCRIPCIONES
+          <div className="flex flex-col mt-1">
+            <h3 className="font-black uppercase tracking-tight text-[22px]" style={{ color: C.textPrimary }}>
+              ESCUELA DE FÚTBOL
+            </h3>
+            <p className="text-sm mt-1" style={{ color: C.textSecondary }}>
+              Formación técnica integral para los futuros cracks. Entrenamientos dinámicos, valores deportivos y seguimiento físico profesional.
+            </p>
+          </div>
+          <button
+            className="mt-2 w-full h-12 rounded-lg font-bold uppercase tracking-wider shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2 text-[17px]"
+            style={{ background: C.surfaceContainerHighest, color: C.textPrimary }}
+          >
+            <span>Información e Inscripciones</span>
+            <Icon name="edit_calendar" size={18} />
           </button>
         </div>
 
-        <div className="rounded-3xl bg-gradient-to-br from-amber-600/20 to-[#14141c] border border-amber-500/20 p-5">
-          <div className="w-10 h-10 rounded-xl bg-amber-400 flex items-center justify-center mb-3">
-            <Icon name="restaurant" className="text-black" />
+        {/* El Tercer Tiempo */}
+        <div
+          className="rounded-xl p-5 flex flex-col gap-3 shadow-md relative overflow-hidden"
+          style={{ background: C.surfaceCard }}
+        >
+          <div
+            className="absolute -right-6 -bottom-6 w-32 h-32 rounded-full blur-xl pointer-events-none"
+            style={{ background: 'rgba(245,158,11,0.1)' }}
+          />
+          <div className="flex items-center justify-between">
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-inner"
+              style={{ background: 'rgba(245,158,11,0.18)' }}
+            >
+              <Icon name="sports_bar" size={26} style={{ color: C.accent }} />
+            </div>
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+              style={{ background: C.surfaceContainerHigh }}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ background: C.sportsPitch }} />
+              <span className="font-bold text-[10px] uppercase" style={{ color: C.textPrimary }}>
+                Cocina Abierta
+              </span>
+            </div>
           </div>
-          <h3 className="text-lg font-black mb-1">
-            EL TERCER <span className="text-amber-400">TIEMPO</span>
-          </h3>
-          <p className="text-sm text-slate-400 mb-3">
-            La experiencia no termina en la cancha. Disfrutá de nuestra gastronomía premium.
-          </p>
+          <div className="flex flex-col mt-1">
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-black uppercase tracking-tight text-[22px]" style={{ color: C.textPrimary }}>
+                EL TERCER
+              </h3>
+              <h3 className="font-black uppercase tracking-tight text-[22px]" style={{ color: C.accent }}>
+                TIEMPO
+              </h3>
+            </div>
+            <p className="text-sm mt-1" style={{ color: C.textSecondary }}>
+              La experiencia no termina en el pitazo final. Cervezas tiradas artesanales, smash burgers, tablas de picadas y tragos de autor junto a la cancha.
+            </p>
+          </div>
           <Link
             to={`/${negocioId}/menu`}
-            className="flex items-center justify-center w-full py-3 rounded-xl bg-amber-400 text-black font-bold text-sm"
+            className="mt-2 w-full py-3 rounded-lg font-black uppercase tracking-wider shadow-xl active:scale-95 transition-transform flex items-center justify-center gap-2 text-[17px]"
+            style={{
+              background: `linear-gradient(to right, ${C.accent}, ${C.primaryContainer}, ${C.secondaryContainer})`,
+              color: C.surfaceBase,
+            }}
           >
-            VER MENÚ DEL BAR →
+            <span>Ver Menú del Bar</span>
+            <Icon name="arrow_forward" size={20} />
           </Link>
+        </div>
+      </section>
+
+      {/* ── TRUST METRICS ── */}
+      <section className="px-4 pt-1 pb-8">
+        <div
+          className="grid grid-cols-3 gap-1 rounded-xl p-4 text-center"
+          style={{ background: 'rgba(14,14,19,0.8)' }}
+        >
+          {[
+            { value: '5+', label: 'Canchas Pro', color: C.accent },
+            { value: '100%', label: 'Iluminación LED', color: C.textPrimary },
+            { value: '24/7', label: 'Seguridad VIP', color: C.secondaryContainer },
+          ].map((m) => (
+            <div key={m.label} className="flex flex-col items-center justify-center">
+              <span className="font-black text-[22px]" style={{ color: m.color }}>
+                {m.value}
+              </span>
+              <span
+                className="uppercase mt-0.5"
+                style={{ color: C.textMuted, fontSize: '10px', fontWeight: 800, letterSpacing: '0.08em' }}
+              >
+                {m.label}
+              </span>
+            </div>
+          ))}
         </div>
       </section>
     </div>

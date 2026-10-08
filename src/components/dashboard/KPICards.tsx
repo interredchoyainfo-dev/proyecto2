@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import { Icon } from '../ui/Icon';
 
@@ -11,6 +12,7 @@ function formatMoney(n: number) {
 }
 
 export function KPICards() {
+  const { negocioId } = useParams();
   const getTodayStats = useStore((s) => s.getTodayStats);
   const reservations = useStore((s) => s.reservations);
   const cashMovements = useStore((s) => s.cashMovements);
@@ -18,8 +20,8 @@ export function KPICards() {
   const cashSession = useStore((s) => s.cashSession);
 
   const stats = useMemo(
-    () => getTodayStats(),
-    [getTodayStats, reservations, cashMovements, clients, cashSession]
+    () => getTodayStats(negocioId),
+    [getTodayStats, reservations, cashMovements, clients, cashSession, negocioId]
   );
 
   const cards = [

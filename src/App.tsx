@@ -1,10 +1,12 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { ConfigProvider } from './core/services/ConfigContext';
+import { ConfigProvider, useConfig } from './core/services/ConfigContext';
 import AdminLayout from './layouts/AdminLayout';
 import RoleGuard from './core/guards/RoleGuard';
 import ModuleGuard from './core/guards/ModuleGuard';
 import AdminGuard from './core/guards/AdminGuard';
+import SuperAdminGuard from './core/guards/SuperAdminGuard';
+import SuperAdminLoginPage from './modules/superadmin/SuperAdminLoginPage';
 import LoginPage from './modules/admin/LoginPage';
 
 // Existing modules (will be adapted)
@@ -59,18 +61,70 @@ function Placeholder({ title }: { title: string }) {
   );
 }
 
+function TenantRouteWrapper({ children }: { children: React.ReactNode }) {
+  const { config, loading, error } = useConfig();
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0A0A0F] text-white">
+        <div className="animate-spin w-10 h-10 border-2 border-violet-500 border-t-transparent rounded-full mb-3" />
+        <p className="text-xs text-slate-400 font-medium">Cargando complejo...</p>
+      </div>
+    );
+  }
+
+  if (error || !config) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0F] text-white flex items-center justify-center p-6 text-center">
+        <p className="text-base font-semibold text-slate-300">Ruta no encontrada</p>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
 function TenantRoutes() {
+  const { negocioId } = useParams();
+
+  // If URL mistakenly matches /superadmin/* here, redirect to SuperAdmin
+  if (negocioId === 'superadmin') {
+    return <Navigate to="/superadmin" replace />;
+  }
+
   return (
     <ConfigProvider>
-      <Routes>
-        <Route path="login" element={<LoginPage />} />
+      <TenantRouteWrapper>
+        <Routes>
+          <Route path="login" element={<LoginPage />} />
 
         {/* Portal del Cliente (público) */}
         <Route element={<ClientLayout />}>
           <Route index element={<ClientHome />} />
-          <Route path="reservar" element={<ClientReservar />} />
-          <Route path="menu" element={<ClientMenu />} />
-          <Route path="mis-reservas" element={<ClientMisReservas />} />
+          <Route
+            path="reservar"
+            element={
+              <ModuleGuard moduleId="reservas">
+                <ClientReservar />
+              </ModuleGuard>
+            }
+          />
+          <Route
+            path="menu"
+            element={
+              <ModuleGuard moduleId="bar">
+                <ClientMenu />
+              </ModuleGuard>
+            }
+          />
+          <Route
+            path="mis-reservas"
+            element={
+              <ModuleGuard moduleId="reservas">
+                <ClientMisReservas />
+              </ModuleGuard>
+            }
+          />
         </Route>
 
         {/* Admin Suite - protected */}
@@ -147,9 +201,11 @@ function TenantRoutes() {
         <Route
           path="app/mozos"
           element={
-            <RoleGuard allowedRoles={['mozo', 'admin', 'encargado']}>
-              <MozoLayout />
-            </RoleGuard>
+            <ModuleGuard moduleId="mozos">
+              <RoleGuard allowedRoles={['mozo', 'admin', 'encargado']}>
+                <MozoLayout />
+              </RoleGuard>
+            </ModuleGuard>
           }
         >
           <Route index element={<MozoMesas />} />
@@ -157,13 +213,24 @@ function TenantRoutes() {
           <Route path="nuevo" element={<MozoNuevo />} />
           <Route path="pedido/:pedidoId" element={<MozoPedido />} />
         </Route>
-        <Route path="cocina" element={<RoleGuard allowedRoles={['cocina', 'admin', 'encargado']}><CocinaKDS /></RoleGuard>} />
+        <Route
+          path="cocina"
+          element={
+            <ModuleGuard moduleId="cocina">
+              <RoleGuard allowedRoles={['cocina', 'admin', 'encargado']}>
+                <CocinaKDS />
+              </RoleGuard>
+            </ModuleGuard>
+          }
+        />
         <Route
           path="app/delivery"
           element={
-            <RoleGuard allowedRoles={['delivery', 'admin', 'encargado']}>
-              <DeliveryLayout />
-            </RoleGuard>
+            <ModuleGuard moduleId="delivery">
+              <RoleGuard allowedRoles={['delivery', 'admin', 'encargado']}>
+                <DeliveryLayout />
+              </RoleGuard>
+            </ModuleGuard>
           }
         >
           <Route index element={<DeliveryPedidos />} />
@@ -175,8 +242,16 @@ function TenantRoutes() {
         <Route path="marketplace/*" element={<Placeholder title="Marketplace de Módulos" />} />
 
         {/* Fallback */}
-        <Route path="*" element={<Navigate to="." replace />} />
+        <Route
+          path="*"
+          element={
+            <div className="min-h-[50vh] flex items-center justify-center text-center p-6 text-slate-300 font-semibold text-base">
+              Ruta no encontrada
+            </div>
+          }
+        />
       </Routes>
+      </TenantRouteWrapper>
     </ConfigProvider>
   );
 }
@@ -193,13 +268,16 @@ export default function App() {
           <Route path="/" element={<Navigate to="/giovanni" replace />} />
           <Route path="/login" element={<LoginPage />} />
 
+          {/* SuperAdmin Login explicit route */}
+          <Route path="/superadmin/login" element={<SuperAdminLoginPage />} />
+
           {/* SuperAdmin SaaS Console */}
           <Route
             path="/superadmin"
             element={
-              <RoleGuard allowedRoles={['superadmin']}>
+              <SuperAdminGuard>
                 <SuperAdminLayout />
-              </RoleGuard>
+              </SuperAdminGuard>
             }
           >
             <Route index element={<SuperAdminDashboard />} />
@@ -207,10 +285,21 @@ export default function App() {
             <Route path="tenants/:tenantId" element={<TenantDetail />} />
             <Route path="planes" element={<PlanesPage />} />
             <Route path="modulos" element={<ModulosPage />} />
+            <Route path="*" element={<Navigate to="/superadmin" replace />} />
           </Route>
 
           {/* Tenant sandbox */}
           <Route path="/:negocioId/*" element={<TenantRoutes />} />
+
+          {/* Global Fallback */}
+          <Route
+            path="*"
+            element={
+              <div className="min-h-screen bg-[#0A0A0F] text-white flex items-center justify-center p-6 text-center">
+                <p className="text-base font-semibold text-slate-300">Ruta no encontrada</p>
+              </div>
+            }
+          />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

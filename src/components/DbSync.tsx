@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api';
+import { useParams } from 'react-router-dom';
+import { api, getApiTenant, setApiTenant } from '../lib/api';
 import { useStore } from '../store/useStore';
 import { useMesasStore } from '../store/useMesasStore';
+import { useEspaciosStore } from '../store/useEspaciosStore';
+import { useOfertasStore } from '../store/useOfertasStore';
 import {
   initFirestoreRealtimeSync,
+  getCurrentTenant,
   firebaseSaveProducto,
   firebaseDeleteProducto,
   firebaseSaveMesa,
@@ -19,29 +23,41 @@ import {
   firebaseSaveCajaMovimiento,
 } from '../lib/firebaseSync';
 
+interface DbSyncProps {
+  negocioId?: string;
+}
+
 /**
- * Sincroniza Zustand ↔ Firebase Firestore (en tiempo real) + SQLite local de respaldo.
+ * Sincroniza Zustand ↔ Firebase Firestore (en tiempo real) + SQLite local de respaldo
+ * de forma 100% AISLADA e INDEPENDIENTE para cada negocio / cliente.
  */
-export default function DbSync() {
+export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
+  const routeParams = useParams<{ negocioId?: string }>();
+  const activeNegocio = (propNegocioId || routeParams.negocioId || getApiTenant() || 'giovanni').toLowerCase().trim();
+
   const [status, setStatus] = useState<'connecting' | 'online' | 'offline'>('connecting');
 
   useEffect(() => {
-    // 1. Iniciar sincronización en tiempo real con Firebase Firestore
+    if (!activeNegocio || activeNegocio === 'superadmin' || activeNegocio === 'login') return;
+
+    setApiTenant(activeNegocio);
+
+    // 1. Iniciar sincronización en tiempo real con la colección del negocio en Firebase
     try {
-      initFirestoreRealtimeSync();
+      initFirestoreRealtimeSync(activeNegocio);
       setStatus('online');
     } catch (e) {
-      console.warn('Error iniciando Firestore:', e);
+      console.warn(`Error iniciando Firestore para ${activeNegocio}:`, e);
     }
 
-    // 2. Respaldo opcional con SQLite local
+    // 2. Respaldo y carga inicial desde SQLite de este negocio
     let cancelled = false;
     let errorCount = 0;
     let lastPayload = '';
 
     const pull = async () => {
       try {
-        const data = await api.sync();
+        const data = await api.sync(activeNegocio);
         if (cancelled) return;
         errorCount = 0;
 
@@ -49,14 +65,27 @@ export default function DbSync() {
         if (serialized === lastPayload) return;
         lastPayload = serialized;
 
-        // Si Firestore aún no pobló nada, SQLite llena datos
-        const curProducts = useStore.getState().products;
-        if (!curProducts.length && data.productos?.length) {
+        // Poblamos los stores con los datos exclusivos del negocio
+        if (data.productos) {
           useStore.setState({ products: data.productos });
         }
-        const curMesas = useMesasStore.getState().mesas;
-        if (!curMesas.length && data.mesas?.length) {
+        if (data.mesas) {
           useMesasStore.setState({ mesas: data.mesas });
+        }
+        if (data.pedidos) {
+          useMesasStore.setState({ pedidos: data.pedidos });
+        }
+        if (data.espacios) {
+          useEspaciosStore.setState({ espacios: data.espacios });
+        }
+        if (data.reservas) {
+          useStore.setState({ reservations: data.reservas });
+        }
+        if (data.clientes) {
+          useStore.setState({ clients: data.clientes });
+        }
+        if (data.ofertas) {
+          useOfertasStore.setState({ ofertas: data.ofertas });
         }
       } catch {
         errorCount++;
@@ -66,25 +95,26 @@ export default function DbSync() {
     pull();
     const interval = setInterval(() => {
       if (errorCount < 3) pull();
-    }, 30000);
+    }, 20000);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [activeNegocio]);
 
   if (status === 'online') return null;
   return (
     <div className="fixed bottom-20 right-3 z-[200] px-2.5 py-1 rounded-full text-[10px] font-medium shadow-lg bg-amber-500/90 text-black">
-      Conectando Firebase…
+      Conectando {activeNegocio}…
     </div>
   );
 }
 
-/** Guarda un pedido completo en Firebase y API local */
+/** Guarda un pedido completo en Firebase y API local del negocio */
 export async function persistPedido(pedido: any) {
-  firebaseSavePedido(pedido);
+  const tenant = getCurrentTenant();
+  firebaseSavePedido(pedido, tenant);
   try {
     const existing = await api.getPedidos();
     const found = existing.find((p: any) => p.id === pedido.id);
@@ -96,7 +126,8 @@ export async function persistPedido(pedido: any) {
 }
 
 export async function deletePedidoDb(id: string) {
-  firebaseDeletePedido(id);
+  const tenant = getCurrentTenant();
+  firebaseDeletePedido(id, tenant);
   try {
     await api.deletePedido(id);
   } catch {
@@ -105,7 +136,8 @@ export async function deletePedidoDb(id: string) {
 }
 
 export async function persistMesa(id: string, data: any, isNew = false) {
-  firebaseSaveMesa({ id, ...data });
+  const tenant = getCurrentTenant();
+  firebaseSaveMesa({ id, ...data }, tenant);
   try {
     if (isNew) await api.createMesa({ id, ...data });
     else await api.updateMesa(id, data);
@@ -123,7 +155,8 @@ export async function deleteMesaDb(id: string) {
 }
 
 export async function persistReserva(data: any) {
-  firebaseSaveReserva(data);
+  const tenant = getCurrentTenant();
+  firebaseSaveReserva(data, tenant);
   try {
     await api.createReserva(data);
   } catch {
@@ -132,7 +165,8 @@ export async function persistReserva(data: any) {
 }
 
 export async function updateReservaDb(id: string, data: any) {
-  firebaseSaveReserva({ id, ...data });
+  const tenant = getCurrentTenant();
+  firebaseSaveReserva({ id, ...data }, tenant);
   try {
     await api.updateReserva(id, data);
   } catch {
@@ -141,7 +175,8 @@ export async function updateReservaDb(id: string, data: any) {
 }
 
 export async function deleteReservaDb(id: string) {
-  firebaseDeleteReserva(id);
+  const tenant = getCurrentTenant();
+  firebaseDeleteReserva(id, tenant);
   try {
     await api.deleteReserva(id);
   } catch {
@@ -150,7 +185,8 @@ export async function deleteReservaDb(id: string) {
 }
 
 export async function persistProducto(data: any, isNew: boolean) {
-  firebaseSaveProducto(data);
+  const tenant = getCurrentTenant();
+  firebaseSaveProducto(data, tenant);
   try {
     if (isNew) await api.createProducto(data);
     else await api.updateProducto(data.id, data);
@@ -160,7 +196,8 @@ export async function persistProducto(data: any, isNew: boolean) {
 }
 
 export async function deleteProductoDb(id: string) {
-  firebaseDeleteProducto(id);
+  const tenant = getCurrentTenant();
+  firebaseDeleteProducto(id, tenant);
   try {
     await api.deleteProducto(id);
   } catch {
@@ -169,7 +206,8 @@ export async function deleteProductoDb(id: string) {
 }
 
 export async function persistEspacio(data: any, isNew = false) {
-  firebaseSaveEspacio(data);
+  const tenant = getCurrentTenant();
+  firebaseSaveEspacio(data, tenant);
   try {
     if (isNew) await api.createEspacio(data);
     else await api.updateEspacio(data.id, data);
@@ -179,7 +217,8 @@ export async function persistEspacio(data: any, isNew = false) {
 }
 
 export async function deleteEspacioDb(id: string) {
-  firebaseDeleteEspacio(id);
+  const tenant = getCurrentTenant();
+  firebaseDeleteEspacio(id, tenant);
   try {
     await api.deleteEspacio(id);
   } catch {
@@ -188,7 +227,8 @@ export async function deleteEspacioDb(id: string) {
 }
 
 export async function persistCliente(data: any, isNew: boolean) {
-  firebaseSaveCliente(data);
+  const tenant = getCurrentTenant();
+  firebaseSaveCliente(data, tenant);
   try {
     if (isNew) await api.createCliente(data);
     else await api.updateCliente(data.id, data);
@@ -198,7 +238,8 @@ export async function persistCliente(data: any, isNew: boolean) {
 }
 
 export async function deleteClienteDb(id: string) {
-  firebaseDeleteCliente(id);
+  const tenant = getCurrentTenant();
+  firebaseDeleteCliente(id, tenant);
   try {
     await api.deleteCliente(id);
   } catch {
@@ -224,7 +265,8 @@ export async function deleteOfertaDb(id: string) {
 }
 
 export async function persistCajaSesion(data: any) {
-  firebaseSaveCajaSesion(data);
+  const tenant = getCurrentTenant();
+  firebaseSaveCajaSesion(data, tenant);
   try {
     await api.updateCajaSesion(data);
   } catch {
@@ -233,7 +275,8 @@ export async function persistCajaSesion(data: any) {
 }
 
 export async function persistCajaMovimiento(data: any) {
-  firebaseSaveCajaMovimiento(data);
+  const tenant = getCurrentTenant();
+  firebaseSaveCajaMovimiento(data, tenant);
   try {
     await api.createCajaMovimiento(data);
   } catch {

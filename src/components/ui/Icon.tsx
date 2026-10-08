@@ -52,6 +52,7 @@ interface IconProps {
   className?: string;
   filled?: boolean;
   size?: number;
+  style?: React.CSSProperties;
 }
 
 const iconMap: Record<string, LucideIcon> = {
@@ -113,7 +114,7 @@ const iconMap: Record<string, LucideIcon> = {
   arrow_upward: ArrowUp,
 };
 
-export function Icon({ name, className = '', filled = false, size = 20 }: IconProps) {
+export function Icon({ name, className = '', filled = false, size = 20, style }: IconProps) {
   const LucideComponent = iconMap[name];
 
   if (LucideComponent) {
@@ -121,6 +122,7 @@ export function Icon({ name, className = '', filled = false, size = 20 }: IconPr
       <LucideComponent
         size={size}
         className={`${className} ${filled ? 'fill-current' : ''}`}
+        style={style}
       />
     );
   }
@@ -129,7 +131,7 @@ export function Icon({ name, className = '', filled = false, size = 20 }: IconPr
     <span
       translate="no"
       className={`material-symbols-outlined notranslate ${filled ? 'filled' : ''} ${className}`}
-      style={{ fontSize: size }}
+      style={{ fontSize: size, ...style }}
     >
       {name}
     </span>

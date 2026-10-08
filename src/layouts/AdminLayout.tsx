@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useParams, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useParams, useNavigate, Link } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useConfig } from '../core/services/ConfigContext';
@@ -97,6 +97,17 @@ export default function AdminLayout() {
         </div>
 
         <div className="flex items-center gap-3">
+          {user?.rol === 'superadmin' && (
+            <Link
+              to="/superadmin"
+              className="px-3 py-1.5 rounded-xl bg-violet-600/15 hover:bg-violet-600/25 border border-violet-500/30 text-violet-400 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              title="Volver a la consola SaaS SuperAdmin"
+            >
+              <Icon name="admin_panel_settings" size={16} />
+              <span className="hidden sm:inline">Consola SuperAdmin</span>
+            </Link>
+          )}
+
           <button
             onClick={() => document.documentElement.classList.toggle('dark')}
             className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"

@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { useStore } from '../../store/useStore';
 import { Icon } from '../ui/Icon';
@@ -36,9 +37,14 @@ const statusStyle: Record<string, string> = {
 };
 
 export function CourtGrid() {
+  const { negocioId } = useParams();
+  const currentNegocio = (negocioId || 'giovanni').toLowerCase();
+  const getEspaciosByTenant = useEspaciosStore((s) => s.getEspaciosByTenant);
   const allEspacios = useEspaciosStore((s) => s.espacios);
-  const espacios = useMemo(() => allEspacios.filter((e) => e.isActive), [allEspacios]);
-  const reservations = useStore((s) => s.reservations);
+  const espacios = useMemo(() => getEspaciosByTenant(currentNegocio).filter((e) => e.isActive), [allEspacios, currentNegocio, getEspaciosByTenant]);
+  const getReservationsByTenant = useStore((s) => s.getReservationsByTenant);
+  const allReservations = useStore((s) => s.reservations);
+  const reservations = useMemo(() => getReservationsByTenant(currentNegocio), [allReservations, currentNegocio, getReservationsByTenant]);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {

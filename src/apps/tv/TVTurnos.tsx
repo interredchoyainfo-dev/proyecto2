@@ -1,4 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
+import { useConfig } from '../../core/services/ConfigContext';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { useStore } from '../../store/useStore';
 import { Icon } from '../../components/ui/Icon';
@@ -11,8 +13,12 @@ const statusConfig = {
 };
 
 export default function TVTurnos() {
+  const { config } = useConfig();
+  const { negocioId } = useParams();
+  const currentNegocio = (negocioId || 'giovanni').toLowerCase();
+  const tenantName = config?.negocio.nombre || 'Complejo Deportivo';
   const allEspacios = useEspaciosStore((s) => s.espacios);
-  const espacios = useMemo(() => allEspacios.filter((e) => e.isActive), [allEspacios]);
+  const espacios = useMemo(() => allEspacios.filter((e) => e.isActive && (e.negocioId || 'giovanni').toLowerCase() === currentNegocio), [allEspacios, currentNegocio]);
   const reservations = useStore((s) => s.reservations);
   const [now, setNow] = useState(new Date());
 
@@ -35,7 +41,7 @@ export default function TVTurnos() {
             <Icon name="sports_soccer" size={32} className="text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight">Complejo Giovanni</h1>
+            <h1 className="text-3xl font-black tracking-tight">{tenantName}</h1>
             <p className="text-slate-400 text-sm">Estado de canchas en vivo</p>
           </div>
         </div>

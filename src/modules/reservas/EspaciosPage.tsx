@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { Icon } from '../../components/ui/Icon';
 import type { Espacio } from '../../types';
@@ -10,11 +11,24 @@ function formatMoney(n: number) {
 }
 
 export default function EspaciosPage() {
-  const espacios = useEspaciosStore((s) => s.espacios);
+  const { negocioId } = useParams();
+  const currentNegocio = (negocioId || 'giovanni').toLowerCase();
+
+  const allEspacios = useEspaciosStore((s) => s.espacios);
+  const ensureTenantEspacios = useEspaciosStore((s) => s.ensureTenantEspacios);
   const addEspacio = useEspaciosStore((s) => s.addEspacio);
   const updateEspacio = useEspaciosStore((s) => s.updateEspacio);
   const deleteEspacio = useEspaciosStore((s) => s.deleteEspacio);
   const updateStatus = useEspaciosStore((s) => s.updateStatus);
+
+  useEffect(() => {
+    ensureTenantEspacios(currentNegocio);
+  }, [currentNegocio, ensureTenantEspacios]);
+
+  const espacios = useMemo(
+    () => allEspacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase() === currentNegocio),
+    [allEspacios, currentNegocio]
+  );
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Espacio | null>(null);
@@ -91,7 +105,7 @@ export default function EspaciosPage() {
       precioPorPersona: form.usaCapacidad ? form.precioPorPersona : false,
       isActive: form.isActive,
       status: 'libre' as const,
-      negocioId: 'giovanni',
+      negocioId: currentNegocio,
     };
     if (editing) {
       updateEspacio(editing.id, payload);

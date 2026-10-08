@@ -23,10 +23,14 @@ interface MesasState {
   pedidos: Pedido[];
   activePedidoId: string | null; // pedido actualmente siendo editado
 
+  // Tenant helpers
+  getMesasByTenant: (negocioId: string) => Mesa[];
+  getPedidosByTenant: (negocioId: string) => Pedido[];
+
   // Mesas
   updateMesaEstado: (mesaId: string, estado: MesaEstado, mozoId?: string) => void;
   getMesa: (id: string) => Mesa | undefined;
-  addMesa: (data: { numero: number; sector: Mesa['sector']; capacidad: number }) => void;
+  addMesa: (data: { numero: number; sector: Mesa['sector']; capacidad: number; negocioId?: string }) => void;
   updateMesa: (id: string, data: Partial<Pick<Mesa, 'numero' | 'sector' | 'capacidad' | 'estado'>>) => void;
   deleteMesa: (id: string) => void;
   enviarItemsACocina: (pedidoId: string) => number; // returns count of items sent
@@ -39,13 +43,14 @@ interface MesasState {
     clienteNombre?: string;
     clienteTelefono?: string;
     direccionDelivery?: string;
+    negocioId?: string;
   }) => string; // returns pedidoId
   addItemToPedido: (pedidoId: string, product: Product, cantidad?: number, notas?: string) => void;
   updateItemEstado: (pedidoId: string, itemId: string, estado: ItemEstado) => void;
   updatePedidoEstado: (pedidoId: string, estado: PedidoEstado) => void;
   removeItemFromPedido: (pedidoId: string, itemId: string) => void;
   getPedidoByMesa: (mesaId: string) => Pedido | undefined;
-  getActivePedidos: () => Pedido[];
+  getActivePedidos: (negocioId?: string) => Pedido[];
   setActivePedido: (id: string | null) => void;
   cerrarMesa: (mesaId: string) => void;
 }
@@ -56,6 +61,21 @@ export const useMesasStore = create<MesasState>()(
       mesas: initialMesas,
       pedidos: [],
       activePedidoId: null,
+
+      // ─── Tenant-scoped getters ───────────────────────────────
+      getMesasByTenant: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        return get().mesas.filter(
+          (m) => (m.negocioId || 'giovanni').toLowerCase() === clean
+        );
+      },
+
+      getPedidosByTenant: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        return get().pedidos.filter(
+          (p) => (p.negocioId || 'giovanni').toLowerCase() === clean
+        );
+      },
 
       updateMesaEstado: (mesaId, estado, mozoId) =>
         set((s) => ({
@@ -68,20 +88,22 @@ export const useMesasStore = create<MesasState>()(
 
       getMesa: (id) => get().mesas.find((m) => m.id === id),
 
-      addMesa: (data) =>
+      addMesa: (data) => {
+        const targetNegocio = (data.negocioId || 'giovanni').toLowerCase();
         set((s) => ({
           mesas: [
             ...s.mesas,
             {
-              id: `m${Date.now()}`,
-              negocioId: 'giovanni',
+              id: `m-${targetNegocio}-${Date.now()}`,
+              negocioId: targetNegocio,
               numero: data.numero,
               sector: data.sector,
               capacidad: data.capacidad,
               estado: 'libre' as const,
             },
           ],
-        })),
+        }));
+      },
 
       updateMesa: (id, data) =>
         set((s) => ({
@@ -130,10 +152,11 @@ export const useMesasStore = create<MesasState>()(
       },
 
       createPedido: (data) => {
-        const id = `ped-${Date.now()}`;
+        const targetNegocio = (data.negocioId || 'giovanni').toLowerCase();
+        const id = `ped-${targetNegocio}-${Date.now()}`;
         const nuevo: Pedido = {
           id,
-          negocioId: 'giovanni',
+          negocioId: targetNegocio,
           tipoPedido: data.tipoPedido,
           mesaId: data.mesaId,
           mozoId: data.mozoId,
@@ -266,10 +289,14 @@ export const useMesasStore = create<MesasState>()(
             !['entregado', 'cancelado'].includes(p.estado)
         ),
 
-      getActivePedidos: () =>
-        get().pedidos.filter((p) =>
+      getActivePedidos: (negocioId) => {
+        const all = get().pedidos.filter((p) =>
           !['entregado', 'cancelado'].includes(p.estado)
-        ),
+        );
+        if (!negocioId) return all;
+        const clean = negocioId.toLowerCase();
+        return all.filter((p) => (p.negocioId || 'giovanni').toLowerCase() === clean);
+      },
 
       setActivePedido: (id) => set({ activePedidoId: id }),
 

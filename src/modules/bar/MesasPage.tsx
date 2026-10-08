@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { useMesasStore } from '../../store/useMesasStore';
 import { useStore } from '../../store/useStore';
 import { Icon } from '../../components/ui/Icon';
@@ -32,8 +33,12 @@ function formatMoney(n: number) {
 }
 
 export default function MesasPage() {
-  const rawMesas = useMesasStore((s) => s.mesas);
-  const mesas = useMemo(() => (Array.isArray(rawMesas) ? rawMesas : []), [rawMesas]);
+  const { negocioId } = useParams();
+  const currentNegocio = (negocioId || 'giovanni').toLowerCase();
+
+  const getMesasByTenant = useMesasStore((s) => s.getMesasByTenant);
+  const rawAllMesas = useMesasStore((s) => s.mesas);
+  const mesas = useMemo(() => getMesasByTenant(currentNegocio), [rawAllMesas, currentNegocio, getMesasByTenant]);
 
   const createPedido = useMesasStore((s) => s.createPedido);
   const getPedidoByMesa = useMesasStore((s) => s.getPedidoByMesa);
@@ -44,7 +49,9 @@ export default function MesasPage() {
   const updateMesa = useMesasStore((s) => s.updateMesa);
   const deleteMesa = useMesasStore((s) => s.deleteMesa);
   const enviarItemsACocina = useMesasStore((s) => s.enviarItemsACocina);
-  const products = useStore((s) => s.products);
+  const getProductsByTenant = useStore((s) => s.getProductsByTenant);
+  const allProducts = useStore((s) => s.products);
+  const products = useMemo(() => getProductsByTenant(currentNegocio), [allProducts, currentNegocio, getProductsByTenant]);
   const addCashMovement = useStore((s) => s.addCashMovement);
   const cashSession = useStore((s) => s.cashSession);
 

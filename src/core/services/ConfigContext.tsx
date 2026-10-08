@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import type { TenantConfig, ModuleId } from '../../types';
+import { useSuperAdminStore } from '../../store/useSuperAdminStore';
 
 interface ConfigContextType {
   config: TenantConfig | null;
@@ -92,9 +93,10 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<TenantConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const tenants = useSuperAdminStore((s) => s.tenants);
 
   useEffect(() => {
-    if (!negocioId) {
+    if (!negocioId || negocioId === 'superadmin') {
       setConfig(null);
       setLoading(false);
       return;
@@ -103,25 +105,74 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
 
-    // Simulate API call
-    const timer = setTimeout(() => {
-      const tenant = MOCK_TENANTS[negocioId.toLowerCase()];
-      if (tenant && tenant.negocio.isActive) {
-        setConfig(tenant);
+    const lowerId = negocioId.toLowerCase();
 
-        // Inject theme CSS variables
-        if (tenant.theme?.primaryColor) {
-          document.documentElement.style.setProperty('--color-primary', tenant.theme.primaryColor);
-        }
-      } else {
-        setError(`El negocio "${negocioId}" no existe o está suspendido.`);
+    // 1. Look in useSuperAdminStore first (dynamic source of truth)
+    const foundInStore = tenants.find(
+      (t) => t.slug.toLowerCase() === lowerId || t.id.toLowerCase() === lowerId
+    );
+
+    if (foundInStore) {
+      if (!foundInStore.isActive) {
+        setError(`El complejo "${foundInStore.nombre}" se encuentra suspendido.`);
         setConfig(null);
+        setLoading(false);
+        return;
+      }
+
+      const activeMods = Object.keys(foundInStore.modulos).filter(
+        (k) => foundInStore.modulos[k as ModuleId]
+      ) as ModuleId[];
+
+      const tenantTheme = foundInStore.theme || {
+        primaryColor: '#FBBF24',
+        accentColor: '#F59E0B',
+        secondaryColor: '#121722',
+      };
+
+      const tenantObj: TenantConfig = {
+        negocio: {
+          id: foundInStore.id,
+          slug: foundInStore.slug,
+          nombre: foundInStore.nombre,
+          descripcion: foundInStore.descripcion,
+          isActive: foundInStore.isActive,
+          createdAt: foundInStore.createdAt,
+          theme: tenantTheme,
+        },
+        modulos: foundInStore.modulos,
+        activeModules: activeMods,
+        theme: tenantTheme,
+        openTime: '08:00',
+        closeTime: '00:00',
+      };
+
+      setConfig(tenantObj);
+      if (tenantTheme.primaryColor) {
+        document.documentElement.style.setProperty('--color-primary', tenantTheme.primaryColor);
+      }
+      if (tenantTheme.accentColor) {
+        document.documentElement.style.setProperty('--color-accent', tenantTheme.accentColor);
       }
       setLoading(false);
-    }, 300);
+      return;
+    }
 
-    return () => clearTimeout(timer);
-  }, [negocioId]);
+    // 2. Fallback to MOCK_TENANTS if any
+    const mock = MOCK_TENANTS[lowerId];
+    if (mock && mock.negocio.isActive) {
+      setConfig(mock);
+      if (mock.theme?.primaryColor) {
+        document.documentElement.style.setProperty('--color-primary', mock.theme.primaryColor);
+      }
+      setLoading(false);
+      return;
+    }
+
+    setError(`El complejo "${negocioId}" no existe o no está registrado en la plataforma.`);
+    setConfig(null);
+    setLoading(false);
+  }, [negocioId, tenants]);
 
   const isModuleActive = (moduleId: ModuleId): boolean => {
     if (!config) return false;
