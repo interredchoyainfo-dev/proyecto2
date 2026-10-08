@@ -321,6 +321,7 @@ interface AppState {
   getProductsByTenant: (negocioId: string) => Product[];
   getCashSessionByTenant: (negocioId: string) => CashSession | null;
   getCashMovementsByTenant: (negocioId: string) => CashMovement[];
+  resetTenantData: (negocioId: string) => void;
   getTodayStats: (negocioId?: string) => {
     revenue: number;
     occupiedSlots: number;
@@ -541,6 +542,15 @@ export const useStore = create<AppState>()(
       getCashMovementsByTenant: (negocioId) => {
         const clean = (negocioId || 'giovanni').toLowerCase();
         return get().cashMovements.filter((m) => (m.negocioId || 'giovanni').toLowerCase() === clean);
+      },
+
+      resetTenantData: (negocioId: string) => {
+        const clean = (negocioId || "giovanni").toLowerCase();
+        set((s) => ({
+          reservations: s.reservations.filter((r) => (r.negocioId || "giovanni").toLowerCase() !== clean),
+          cashMovements: s.cashMovements.filter((m) => (m.negocioId || "giovanni").toLowerCase() !== clean),
+          cashSession: s.cashSession && (s.cashSession.negocioId || "giovanni").toLowerCase() === clean ? null : s.cashSession,
+        }));
       },
 
       getTodayStats: (negocioId) => {

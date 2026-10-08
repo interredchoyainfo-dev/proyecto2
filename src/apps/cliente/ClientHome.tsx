@@ -186,7 +186,7 @@ export default function ClientHome() {
                 backgroundClip: 'text',
               }}
             >
-              TU LUGAR DEPORTIVO
+              {(config?.negocio as any)?.subtitulo || 'TU LUGAR DEPORTIVO'}
             </span>
           </div>
 
@@ -295,8 +295,22 @@ export default function ClientHome() {
           </Link>
         </div>
 
-        <div className="flex flex-col gap-4">
-          {espacios.map((e) => {
+        {espacios.length === 0 ? (
+          <div
+            className="rounded-2xl p-6 text-center border border-dashed"
+            style={{ background: C.surfaceCard, borderColor: 'rgba(255,255,255,0.1)' }}
+          >
+            <Icon name="sports_tennis" size={32} style={{ color: C.textMuted }} className="mx-auto mb-2 opacity-50" />
+            <p className="text-sm font-semibold" style={{ color: C.textPrimary }}>
+              Próximamente canchas e instalaciones
+            </p>
+            <p className="text-xs mt-1" style={{ color: C.textMuted }}>
+              El complejo está configurando sus espacios para reservas.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {espacios.map((e) => {
             const m = metaFor(e.type);
             return (
               <Link
@@ -363,7 +377,8 @@ export default function ClientHome() {
               </Link>
             );
           })}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* ── PROMO BANNER ── */}

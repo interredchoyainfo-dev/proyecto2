@@ -18,6 +18,8 @@ export default function TenantsPage() {
   const createTenant = useSuperAdminStore((s) => s.createTenant);
   const updateTenant = useSuperAdminStore((s) => s.updateTenant);
   const toggleTenantActive = useSuperAdminStore((s) => s.toggleTenantActive);
+  const deleteTenant = useSuperAdminStore((s) => s.deleteTenant);
+  const resetTenantDataToZero = useSuperAdminStore((s) => s.resetTenantDataToZero);
 
   // New tenant state
   const [showForm, setShowForm] = useState(false);
@@ -30,6 +32,32 @@ export default function TenantsPage() {
   const [descripcion, setDescripcion] = useState(DEFAULT_DESC);
   const [search, setSearch] = useState('');
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
+
+  const [editSubtitulo, setEditSubtitulo] = useState('TU LUGAR DEPORTIVO');
+
+  const handleResetToZero = (t: TenantFull) => {
+    const ok = window.confirm(
+      `¿Estás seguro de reiniciar todas las reservas, ventas y movimientos de caja de "${t.nombre}" a 0?\n\nLos espacios y la configuración se mantendrán intactos. Ideal para dejar en 0 antes de entregar al cliente.`
+    );
+    if (!ok) return;
+    resetTenantDataToZero(t.id);
+    setSuccessBanner(`Se reiniciaron los datos de "${t.nombre}" a cero exitosamente.`);
+    setTimeout(() => setSuccessBanner(null), 4000);
+  };
+
+  const handleDeleteTenant = (t: TenantFull) => {
+    if (t.slug.toLowerCase() === 'giovanni' || t.id.toLowerCase() === 'giovanni') {
+      alert('El complejo Giovanni es la base del sistema y no puede eliminarse.');
+      return;
+    }
+    const ok = window.confirm(
+      `¿ATENCIÓN: Estás seguro de eliminar permanentemente el negocio "${t.nombre}" (/${t.slug})?\n\nEsta acción borrará el complejo y todos sus datos asociados.`
+    );
+    if (!ok) return;
+    deleteTenant(t.id);
+    setSuccessBanner(`El negocio "${t.nombre}" fue eliminado exitosamente.`);
+    setTimeout(() => setSuccessBanner(null), 4000);
+  };
 
   // Edit tenant state
   const [editingTenant, setEditingTenant] = useState<TenantFull | null>(null);
@@ -86,6 +114,7 @@ export default function TenantsPage() {
     setEditAdminPassword(t.adminPassword || 'admin');
     setEditThemePreset(t.theme?.preset || 'superadmin');
     setEditDescripcion(t.descripcion || DEFAULT_DESC);
+    setEditSubtitulo((t as any).subtitulo || 'TU LUGAR DEPORTIVO');
   };
 
   const handleSaveEdit = () => {
@@ -98,6 +127,7 @@ export default function TenantsPage() {
       adminUser: editAdminUser.trim(),
       adminPassword: editAdminPassword.trim(),
       descripcion: editDescripcion.trim(),
+      subtitulo: editSubtitulo.trim(),
       theme: {
         primaryColor: selectedPreset.primaryColor,
         accentColor: selectedPreset.accentColor,
@@ -524,6 +554,28 @@ export default function TenantsPage() {
                         >
                           <Icon name="settings" size={16} />
                         </Link>
+
+                        {/* Reiniciar negocio a 0 */}
+                        <button
+                          onClick={() => handleResetToZero(t)}
+                          className="p-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 transition-colors flex items-center gap-1"
+                          title="Reiniciar reservas y ventas a 0 para entrega"
+                        >
+                          <Icon name="history" size={16} />
+                          <span className="text-xs font-semibold hidden md:inline">Reiniciar a 0</span>
+                        </button>
+
+                        {/* Borrar negocio (excepto giovanni) */}
+                        {t.slug.toLowerCase() !== 'giovanni' && t.id.toLowerCase() !== 'giovanni' && (
+                          <button
+                            onClick={() => handleDeleteTenant(t)}
+                            className="p-2 rounded-xl bg-red-500/15 hover:bg-red-500/30 border border-red-500/30 text-red-400 transition-colors flex items-center gap-1"
+                            title="Eliminar este negocio"
+                          >
+                            <Icon name="delete" size={16} />
+                            <span className="text-xs font-semibold hidden md:inline">Borrar</span>
+                          </button>
+                        )}
 
                         {/* Toggle active button */}
                         <button

@@ -84,17 +84,7 @@ export default function ModuleGuard({ moduleId, children }: Props) {
           </Link>
         </div>
 
-        {/* SuperAdmin shortcut for convenience */}
-        <div className="mt-6 pt-4 border-t border-white/5">
-          <a
-            href={`/superadmin/tenants/${negocioId}`}
-            className="text-[11px] text-slate-500 hover:text-violet-400 inline-flex items-center gap-1 transition-colors"
-          >
-            <Icon name="admin_panel_settings" size={14} />
-            <span>Gestionar módulos en SuperAdmin (/superadmin/tenants/{negocioId})</span>
-          </a>
         </div>
-      </div>
     );
   }
 

@@ -1,4 +1,7 @@
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
+import { useSuperAdminStore } from '../../store/useSuperAdminStore';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { Icon } from '../ui/Icon';
 import type { DaySchedule } from '../../types';
@@ -6,6 +9,46 @@ import type { DaySchedule } from '../../types';
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 export function Settings() {
+  const { negocioId } = useParams();
+  const currentSlug = (negocioId || "giovanni").toLowerCase();
+  const tenant = useSuperAdminStore((s) =>
+    s.tenants.find((t) => t.slug.toLowerCase() === currentSlug || t.id.toLowerCase() === currentSlug)
+  );
+  const updateTenant = useSuperAdminStore((s) => s.updateTenant);
+
+  const [nombre, setNombre] = useState(tenant?.nombre || "Complejo Deportivo");
+  const [subtitulo, setSubtitulo] = useState((tenant as any)?.subtitulo || "TU LUGAR DEPORTIVO");
+  const [descripcion, setDescripcion] = useState(
+    tenant?.descripcion ||
+      "Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional. Elevamos tu juego dentro y fuera de la cancha."
+  );
+  const [whatsapp, setWhatsapp] = useState((tenant as any)?.whatsapp || "3855374835");
+  const [savedBanner, setSavedBanner] = useState(false);
+
+  useEffect(() => {
+    if (tenant) {
+      setNombre(tenant.nombre);
+      setSubtitulo((tenant as any).subtitulo || "TU LUGAR DEPORTIVO");
+      setDescripcion(
+        tenant.descripcion ||
+          "Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional. Elevamos tu juego dentro y fuera de la cancha."
+      );
+      setWhatsapp((tenant as any).whatsapp || "3855374835");
+    }
+  }, [tenant]);
+
+  const handleSaveInfo = () => {
+    if (!tenant) return;
+    updateTenant(tenant.id, {
+      nombre: nombre.trim(),
+      subtitulo: subtitulo.trim(),
+      descripcion: descripcion.trim(),
+      whatsapp: whatsapp.trim(),
+    } as any);
+    setSavedBanner(true);
+    setTimeout(() => setSavedBanner(false), 3000);
+  };
+
   const config = useStore((s) => s.config);
   const updateConfig = useStore((s) => s.updateConfig);
   const currentUser = useStore((s) => s.currentUser);
@@ -61,6 +104,79 @@ export function Settings() {
         </p>
       </div>
 
+      {/* Información del Complejo & Textos de Portada */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold flex items-center gap-2">
+            <Icon name="store" />
+            Información del Complejo & Portada de Clientes
+          </h3>
+          {savedBanner && (
+            <span className="text-xs font-semibold text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+              ✓ Cambios guardados correctamente
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500">
+          Personaliza el nombre, lema y descripción que verán tus clientes en la portada.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Nombre del Complejo</label>
+            <input
+              type="text"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-semibold"
+              placeholder="Ej. Complejo Giovanni"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">Slogan / Subtítulo Destacado</label>
+            <input
+              type="text"
+              value={subtitulo}
+              onChange={(e) => setSubtitulo(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-semibold uppercase"
+              placeholder="Ej. TU LUGAR DEPORTIVO"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-medium text-slate-500 mb-1">Descripción General (Portada)</label>
+            <textarea
+              rows={3}
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm resize-none"
+              placeholder="Descripción de tus instalaciones y servicios..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 mb-1">WhatsApp de Reservas / Contacto</label>
+            <input
+              type="text"
+              value={whatsapp}
+              onChange={(e) => setWhatsapp(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm"
+              placeholder="Ej. 3855374835"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <button
+              onClick={handleSaveInfo}
+              className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+            >
+              <Icon name="save" size={18} />
+              Guardar Información de Portada
+            </button>
+          </div>
+        </div>
+      </div>
       {/* Horarios por día */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5">
         <h3 className="font-semibold flex items-center gap-2 mb-4">

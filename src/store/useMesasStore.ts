@@ -26,6 +26,8 @@ interface MesasState {
   // Tenant helpers
   getMesasByTenant: (negocioId: string) => Mesa[];
   getPedidosByTenant: (negocioId: string) => Pedido[];
+  resetTenantPedidos: (negocioId: string) => void;
+  deleteTenantMesas: (negocioId: string) => void;
 
   // Mesas
   updateMesaEstado: (mesaId: string, estado: MesaEstado, mozoId?: string) => void;
@@ -75,6 +77,24 @@ export const useMesasStore = create<MesasState>()(
         return get().pedidos.filter(
           (p) => (p.negocioId || 'giovanni').toLowerCase() === clean
         );
+      },
+      resetTenantPedidos: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        set((s) => ({
+          pedidos: s.pedidos.filter((p) => (p.negocioId || 'giovanni').toLowerCase() !== clean),
+          mesas: s.mesas.map((m) =>
+            (m.negocioId || 'giovanni').toLowerCase() === clean
+              ? { ...m, estado: 'libre' as const, pedidoActivoId: undefined }
+              : m
+          ),
+        }));
+      },
+      deleteTenantMesas: (negocioId) => {
+        const clean = (negocioId || 'giovanni').toLowerCase();
+        set((s) => ({
+          mesas: s.mesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase() !== clean),
+          pedidos: s.pedidos.filter((p) => (p.negocioId || 'giovanni').toLowerCase() !== clean),
+        }));
       },
 
       updateMesaEstado: (mesaId, estado, mozoId) =>

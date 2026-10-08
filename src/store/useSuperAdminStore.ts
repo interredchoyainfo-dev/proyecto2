@@ -4,6 +4,9 @@ import { firestore } from '../lib/firebase';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ModuleId, Negocio, ThemeConfig } from '../types';
+import { useEspaciosStore } from './useEspaciosStore';
+import { useStore } from './useStore';
+import { useMesasStore } from './useMesasStore';
 
 export interface TenantFull extends Negocio {
   plan: 'trial' | 'basic' | 'pro' | 'enterprise';
@@ -216,6 +219,8 @@ interface SuperAdminState {
     data: Partial<{
       nombre: string;
       slug: string;
+      subtitulo: string;
+      whatsapp: string;
       plan: TenantFull['plan'];
       descripcion: string;
       theme: ThemeConfig;
@@ -226,6 +231,7 @@ interface SuperAdminState {
     }>
   ) => void;
   deleteTenant: (id: string) => void;
+  resetTenantDataToZero: (id: string) => void;
   createTenant: (data: {
     nombre: string;
     slug: string;
@@ -294,10 +300,26 @@ export const useSuperAdminStore = create<SuperAdminState>()(
           ),
         })),
 
-      deleteTenant: (id) =>
+      deleteTenant: (id) => {
+        const tenant = get().tenants.find((t) => t.id === id || t.slug === id);
+        if (!tenant || tenant.slug.toLowerCase() === 'giovanni' || tenant.id.toLowerCase() === 'giovanni') {
+          return;
+        }
         set((s) => ({
           tenants: s.tenants.filter((t) => t.id !== id && t.slug !== id),
-        })),
+        }));
+        const slug = tenant.slug.toLowerCase();
+        useEspaciosStore.getState().deleteEspaciosByTenant?.(slug);
+        useStore.getState().resetTenantData?.(slug);
+        useMesasStore.getState().deleteTenantMesas?.(slug);
+      },
+      resetTenantDataToZero: (id) => {
+        const tenant = get().tenants.find((t) => t.id === id || t.slug === id);
+        if (!tenant) return;
+        const slug = tenant.slug.toLowerCase();
+        useStore.getState().resetTenantData?.(slug);
+        useMesasStore.getState().resetTenantPedidos?.(slug);
+      },
 
       createTenant: (data) => {
         const id = data.slug.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');

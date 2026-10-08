@@ -25,6 +25,7 @@ export default function TenantDetail() {
   const [editAdminPassword, setEditAdminPassword] = useState(tenant?.adminPassword || 'admin');
   const [editThemePreset, setEditThemePreset] = useState(tenant?.theme?.preset || 'superadmin');
   const [editDescripcion, setEditDescripcion] = useState(tenant?.descripcion || '');
+  const [editSubtitulo, setEditSubtitulo] = useState((tenant as any)?.subtitulo || 'TU LUGAR DEPORTIVO');
 
   if (!tenant) {
     return (
@@ -53,6 +54,7 @@ export default function TenantDetail() {
     setEditAdminPassword(tenant.adminPassword || 'admin');
     setEditThemePreset(tenant.theme?.preset || 'superadmin');
     setEditDescripcion(tenant.descripcion || '');
+    setEditSubtitulo((tenant as any)?.subtitulo || 'TU LUGAR DEPORTIVO');
     setShowEdit(true);
   };
 
@@ -67,6 +69,7 @@ export default function TenantDetail() {
       adminUser: editAdminUser.trim(),
       adminPassword: editAdminPassword.trim(),
       descripcion: editDescripcion.trim(),
+      subtitulo: editSubtitulo.trim(),
       theme: {
         primaryColor: selectedPreset.primaryColor,
         accentColor: selectedPreset.accentColor,
@@ -315,6 +318,7 @@ export default function TenantDetail() {
             <Icon name="info" size={16} className="text-violet-400" />
             <span>Lema & Descripción del Complejo</span>
           </div>
+          <p className="text-xs font-bold text-amber-400 uppercase tracking-wide">{(tenant as any)?.subtitulo || 'TU LUGAR DEPORTIVO'}</p>
           <p className="text-sm text-slate-200 italic leading-relaxed">
             "{tenant.descripcion || 'Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional. Elevamos tu juego dentro y fuera de la cancha.'}"
           </p>
