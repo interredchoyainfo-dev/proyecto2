@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { TenantProvider } from './context/TenantContext';
 import { ConfigProvider, useConfig } from './core/services/ConfigContext';
 import AdminLayout from './layouts/AdminLayout';
 import RoleGuard from './core/guards/RoleGuard';
@@ -93,9 +94,10 @@ function TenantRoutes() {
   }
 
   return (
-    <ConfigProvider>
-      <TenantRouteWrapper>
-        <Routes>
+    <TenantProvider negocioId={negocioId}>
+      <ConfigProvider>
+        <TenantRouteWrapper>
+          <Routes>
           <Route path="login" element={<LoginPage />} />
 
         {/* Portal del Cliente (público) */}
@@ -253,6 +255,7 @@ function TenantRoutes() {
       </Routes>
       </TenantRouteWrapper>
     </ConfigProvider>
+    </TenantProvider>
   );
 }
 

@@ -279,3 +279,6 @@ export interface Pedido {
   createdAt: string;
   updatedAt?: string;
 }
+
+export type { Oferta } from '../store/useOfertasStore';
+

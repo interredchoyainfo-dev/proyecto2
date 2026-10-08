@@ -1,3 +1,5 @@
+import type { Espacio, Reservation, Product, Mesa, Client, Oferta } from '../types';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 let activeTenant: string = 'giovanni';
@@ -20,8 +22,23 @@ export function getApiTenant(): string {
   return activeTenant || 'giovanni';
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const currentTenant = getApiTenant();
+/** Obtiene el token de autenticación almacenado */
+export function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const directToken = localStorage.getItem('giovanni-token');
+  if (directToken) return directToken;
+  try {
+    const stored = localStorage.getItem('giovanni-auth');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return parsed.token || null;
+    }
+  } catch {}
+  return null;
+}
+
+async function request<T>(path: string, options?: RequestInit, explicitTenant?: string): Promise<T> {
+  const currentTenant = explicitTenant || getApiTenant();
   const sep = path.includes('?') ? '&' : '?';
   const urlWithTenant = `${API_URL}${path}${sep}negocioId=${encodeURIComponent(currentTenant)}`;
 
@@ -31,88 +48,230 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...(options?.headers as Record<string, string>),
   };
 
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(urlWithTenant, {
     ...options,
     headers,
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API ${res.status}: ${text || res.statusText}`);
+    const data = await res.json().catch(() => null);
+    const msg = data?.message || data?.error || res.statusText;
+    throw new Error(msg || `API Error ${res.status}`);
   }
   return res.json();
 }
 
+const tenantPath = (tenantId?: string) => {
+  const t = tenantId || getApiTenant();
+  return `/negocios/${encodeURIComponent(t)}`;
+};
+
 export const api = {
-  health: () => request<{ ok: boolean; tenantId: string; database: string }>('/health'),
+  health: () => request<{ ok: boolean; tenantId: string; version: string }>('/health'),
+
+  // Tenant Snapshot
   sync: (tenantId?: string) => {
-    if (tenantId) setApiTenant(tenantId);
-    return request<SyncPayload>('/sync');
+    const t = tenantId || getApiTenant();
+    return request<SyncPayload>(`${tenantPath(t)}/sync`, undefined, t);
   },
 
-  // Inicialización de nuevo tenant / base de datos independiente
-  initTenant: (tenantId: string) =>
-    request<{ ok: boolean; database: string }>(`/tenants/${tenantId}/init`, { method: 'POST' }),
+  // Tenants Management (SuperAdmin)
+  getTenants: () => request<{ ok: boolean; tenants: any[] }>('/tenants'),
+  getTenant: (id: string) => request<any>(`/tenants/${encodeURIComponent(id)}`),
+  createTenant: (data: any) =>
+    request('/tenants', { method: 'POST', body: JSON.stringify(data) }),
+  updateTenant: (id: string, data: any) =>
+    request(`/tenants/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTenant: (id: string) =>
+    request(`/tenants/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  resetTenant: (id: string) =>
+    request(`/tenants/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
+  initTenant: (id: string) =>
+    request<{ ok: boolean; tenantId: string }>(`/tenants/${encodeURIComponent(id)}/init`, { method: 'POST' }),
 
-  getProductos: () => request<any[]>('/productos'),
-  createProducto: (data: any) => request('/productos', { method: 'POST', body: JSON.stringify(data) }),
-  updateProducto: (id: string, data: any) =>
-    request(`/productos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteProducto: (id: string) => request(`/productos/${id}`, { method: 'DELETE' }),
+  // Espacios
+  getEspacios: (negocioId?: string) =>
+    request<Espacio[]>(`${tenantPath(negocioId)}/espacios`, undefined, negocioId),
+  createEspacio: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<Espacio>(`${tenantPath(t)}/espacios`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  updateEspacio: (arg1: any, arg2: any, arg3?: any) => {
+    const t = arg3 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg3 !== undefined ? String(arg2) : String(arg1);
+    const data = arg3 !== undefined ? arg3 : arg2;
+    return request<Espacio>(`${tenantPath(t)}/espacios/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  deleteEspacio: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg2 !== undefined ? String(arg2) : String(arg1);
+    return request<{ success: boolean }>(`${tenantPath(t)}/espacios/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
+  },
 
-  getMesas: () => request<any[]>('/mesas'),
-  createMesa: (data: any) => request('/mesas', { method: 'POST', body: JSON.stringify(data) }),
-  updateMesa: (id: string, data: any) =>
-    request(`/mesas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteMesa: (id: string) => request(`/mesas/${id}`, { method: 'DELETE' }),
+  // Reservas
+  getReservas: (negocioId?: string) =>
+    request<Reservation[]>(`${tenantPath(negocioId)}/reservas`, undefined, negocioId),
+  createReserva: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<Reservation>(`${tenantPath(t)}/reservas`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  updateReserva: (arg1: any, arg2: any, arg3?: any) => {
+    const t = arg3 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg3 !== undefined ? String(arg2) : String(arg1);
+    const data = arg3 !== undefined ? arg3 : arg2;
+    return request<Reservation>(`${tenantPath(t)}/reservas/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  deleteReserva: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg2 !== undefined ? String(arg2) : String(arg1);
+    return request<{ success: boolean }>(`${tenantPath(t)}/reservas/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
+  },
 
-  getEspacios: () => request<any[]>('/espacios'),
-  createEspacio: (data: any) => request('/espacios', { method: 'POST', body: JSON.stringify(data) }),
-  updateEspacio: (id: string, data: any) =>
-    request(`/espacios/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteEspacio: (id: string) => request(`/espacios/${id}`, { method: 'DELETE' }),
+  // Productos
+  getProductos: (negocioId?: string) =>
+    request<Product[]>(`${tenantPath(negocioId)}/productos`, undefined, negocioId),
+  createProducto: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<Product>(`${tenantPath(t)}/productos`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  updateProducto: (arg1: any, arg2: any, arg3?: any) => {
+    const t = arg3 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg3 !== undefined ? String(arg2) : String(arg1);
+    const data = arg3 !== undefined ? arg3 : arg2;
+    return request<Product>(`${tenantPath(t)}/productos/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  deleteProducto: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg2 !== undefined ? String(arg2) : String(arg1);
+    return request<{ success: boolean }>(`${tenantPath(t)}/productos/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
+  },
 
-  getReservas: () => request<any[]>('/reservas'),
-  createReserva: (data: any) => request('/reservas', { method: 'POST', body: JSON.stringify(data) }),
-  updateReserva: (id: string, data: any) =>
-    request(`/reservas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteReserva: (id: string) => request(`/reservas/${id}`, { method: 'DELETE' }),
+  // Mesas
+  getMesas: (negocioId?: string) =>
+    request<Mesa[]>(`${tenantPath(negocioId)}/mesas`, undefined, negocioId),
+  createMesa: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<Mesa>(`${tenantPath(t)}/mesas`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  updateMesa: (arg1: any, arg2: any, arg3?: any) => {
+    const t = arg3 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg3 !== undefined ? String(arg2) : String(arg1);
+    const data = arg3 !== undefined ? arg3 : arg2;
+    return request<Mesa>(`${tenantPath(t)}/mesas/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  deleteMesa: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg2 !== undefined ? String(arg2) : String(arg1);
+    return request<{ success: boolean }>(`${tenantPath(t)}/mesas/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
+  },
 
-  getPedidos: () => request<any[]>('/pedidos'),
-  createPedido: (data: any) => request('/pedidos', { method: 'POST', body: JSON.stringify(data) }),
-  updatePedido: (id: string, data: any) =>
-    request(`/pedidos/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deletePedido: (id: string) => request(`/pedidos/${id}`, { method: 'DELETE' }),
+  // Clientes
+  getClientes: (negocioId?: string) =>
+    request<Client[]>(`${tenantPath(negocioId)}/clientes`, undefined, negocioId),
+  createCliente: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<Client>(`${tenantPath(t)}/clientes`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  updateCliente: (arg1: any, arg2: any, arg3?: any) => {
+    const t = arg3 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg3 !== undefined ? String(arg2) : String(arg1);
+    const data = arg3 !== undefined ? arg3 : arg2;
+    return request<Client>(`${tenantPath(t)}/clientes/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  deleteCliente: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg2 !== undefined ? String(arg2) : String(arg1);
+    return request<{ success: boolean }>(`${tenantPath(t)}/clientes/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
+  },
 
-  getClientes: () => request<any[]>('/clientes'),
-  createCliente: (data: any) => request('/clientes', { method: 'POST', body: JSON.stringify(data) }),
-  updateCliente: (id: string, data: any) =>
-    request(`/clientes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteCliente: (id: string) => request(`/clientes/${id}`, { method: 'DELETE' }),
+  // Pedidos
+  getPedidos: (negocioId?: string) =>
+    request<any[]>(`${tenantPath(negocioId)}/pedidos`, undefined, negocioId),
+  createPedido: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<any>(`${tenantPath(t)}/pedidos`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  updatePedido: (arg1: any, arg2: any, arg3?: any) => {
+    const t = arg3 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg3 !== undefined ? String(arg2) : String(arg1);
+    const data = arg3 !== undefined ? arg3 : arg2;
+    return request<any>(`${tenantPath(t)}/pedidos/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  deletePedido: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg2 !== undefined ? String(arg2) : String(arg1);
+    return request<{ success: boolean }>(`${tenantPath(t)}/pedidos/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
+  },
 
-  getOfertas: () => request<any[]>('/ofertas'),
-  createOferta: (data: any) => request('/ofertas', { method: 'POST', body: JSON.stringify(data) }),
-  updateOferta: (id: string, data: any) =>
-    request(`/ofertas/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteOferta: (id: string) => request(`/ofertas/${id}`, { method: 'DELETE' }),
+  // Ofertas
+  getOfertas: (negocioId?: string) =>
+    request<Oferta[]>(`${tenantPath(negocioId)}/ofertas`, undefined, negocioId),
+  createOferta: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<Oferta>(`${tenantPath(t)}/ofertas`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  updateOferta: (arg1: any, arg2: any, arg3?: any) => {
+    const t = arg3 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg3 !== undefined ? String(arg2) : String(arg1);
+    const data = arg3 !== undefined ? arg3 : arg2;
+    return request<Oferta>(`${tenantPath(t)}/ofertas/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  deleteOferta: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const id = arg2 !== undefined ? String(arg2) : String(arg1);
+    return request<{ success: boolean }>(`${tenantPath(t)}/ofertas/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
+  },
 
-  getCajaSesion: () => request<any>('/caja/sesion'),
-  updateCajaSesion: (data: any) =>
-    request('/caja/sesion', { method: 'PUT', body: JSON.stringify(data) }),
-  getCajaMovimientos: () => request<any[]>('/caja/movimientos'),
-  createCajaMovimiento: (data: any) =>
-    request('/caja/movimientos', { method: 'POST', body: JSON.stringify(data) }),
+  // Caja
+  getCajaSesion: (negocioId?: string) =>
+    request<any>(`${tenantPath(negocioId)}/caja/sesion`, undefined, negocioId),
+  updateCajaSesion: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<any>(`${tenantPath(t)}/caja/sesion`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  getCajaMovimientos: (negocioId?: string) =>
+    request<any[]>(`${tenantPath(negocioId)}/caja/movimientos`, undefined, negocioId),
+  getCajaHistorial: (negocioId?: string) =>
+    request<any[]>(`${tenantPath(negocioId)}/caja/historial`, undefined, negocioId),
+  abrirCaja: (negocioIdOrData: any, maybeData?: any) => {
+    const t = maybeData !== undefined ? String(negocioIdOrData) : getApiTenant();
+    const data = maybeData !== undefined ? maybeData : negocioIdOrData;
+    return request<any>(`${tenantPath(t)}/caja/abrir`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  cerrarCaja: (negocioIdOrData: any, maybeData?: any) => {
+    const t = maybeData !== undefined ? String(negocioIdOrData) : getApiTenant();
+    const data = maybeData !== undefined ? maybeData : negocioIdOrData;
+    return request<any>(`${tenantPath(t)}/caja/cerrar`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  createCajaMovimiento: (arg1: any, arg2?: any) => {
+    const t = arg2 !== undefined ? String(arg1) : getApiTenant();
+    const data = arg2 !== undefined ? arg2 : arg1;
+    return request<any>(`${tenantPath(t)}/caja/movimientos`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
 };
 
 export interface SyncPayload {
   tenantId?: string;
-  productos: any[];
-  mesas: any[];
-  espacios: any[];
-  reservas: any[];
-  clientes: any[];
+  productos: Product[];
+  mesas: Mesa[];
+  espacios: Espacio[];
+  reservas: Reservation[];
+  clientes: Client[];
   pedidos: any[];
-  ofertas: any[];
+  ofertas: Oferta[];
   cajaSesion: any;
   cajaMovimientos: any[];
 }

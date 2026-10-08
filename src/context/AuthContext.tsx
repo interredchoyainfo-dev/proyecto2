@@ -103,7 +103,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = password.trim();
 
-    // 1. SuperAdmin global check
+    // 1. Intentar autenticar contra el backend real (/api/auth/login)
+    try {
+      const res = await fetch('http://localhost:3001/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, password: cleanPass, negocioId: tenantSlugOrId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUser(data.user);
+          localStorage.setItem('giovanni-auth', JSON.stringify(data.user));
+          if (data.token) localStorage.setItem('giovanni-token', data.token);
+          return true;
+        }
+      }
+    } catch {
+      // Backend offline o indisponible: continuar a verificación de contingencia
+    }
+
+    // 2. SuperAdmin global check (contingencia)
     if ((cleanEmail === 'admin' || cleanEmail === 'super') && cleanPass === 'Giolezana19') {
       const superUser: User = {
         id: 'u-super',
@@ -118,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return true;
     }
 
-    // 2. Specific Tenant credentials check
+    // 3. Specific Tenant credentials check
     if (tenantSlugOrId) {
       const tenants = useSuperAdminStore.getState().tenants;
       const targetTenant = tenants.find(
@@ -145,7 +165,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return true;
         }
 
-        // Allow staff of this specific tenant
         const staff = MOCK_USERS.find(
           (u) =>
             u.negocioId?.toLowerCase() === targetTenant.slug.toLowerCase() &&
@@ -159,12 +178,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return true;
         }
 
-        // Credentials did NOT match this specific tenant!
         return false;
       }
     }
 
-    // 3. Fallback for root / login
     const found = MOCK_USERS.find(
       (u) => u.email.toLowerCase() === cleanEmail && u.password === cleanPass
     );
@@ -183,6 +200,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tenantSlugOrId?: string
   ): Promise<boolean> => {
     const targetNegocio = tenantSlugOrId?.toLowerCase() || 'giovanni';
+
+    try {
+      const res = await fetch('http://localhost:3001/api/auth/pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin, negocioId: targetNegocio }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.user) {
+          setUser(data.user);
+          localStorage.setItem('giovanni-auth', JSON.stringify(data.user));
+          if (data.token) localStorage.setItem('giovanni-token', data.token);
+          return true;
+        }
+      }
+    } catch {}
+
     const found = MOCK_USERS.find(
       (u) =>
         u.pinAcceso === pin &&
@@ -201,6 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('giovanni-auth');
+    localStorage.removeItem('giovanni-token');
   };
 
   const hasRole = (...roles: UserRole[]) => {

@@ -12,21 +12,21 @@ function formatMoney(n: number) {
 
 export default function EspaciosPage() {
   const { negocioId } = useParams();
-  const currentNegocio = (negocioId || 'giovanni').toLowerCase();
+  const currentNegocio = (negocioId || 'giovanni').toLowerCase().trim();
 
   const allEspacios = useEspaciosStore((s) => s.espacios);
-  const ensureTenantEspacios = useEspaciosStore((s) => s.ensureTenantEspacios);
+  const fetchEspacios = useEspaciosStore((s) => s.fetchEspacios);
   const addEspacio = useEspaciosStore((s) => s.addEspacio);
   const updateEspacio = useEspaciosStore((s) => s.updateEspacio);
   const deleteEspacio = useEspaciosStore((s) => s.deleteEspacio);
   const updateStatus = useEspaciosStore((s) => s.updateStatus);
 
   useEffect(() => {
-    ensureTenantEspacios(currentNegocio);
-  }, [currentNegocio, ensureTenantEspacios]);
+    fetchEspacios(currentNegocio);
+  }, [currentNegocio, fetchEspacios]);
 
   const espacios = useMemo(
-    () => allEspacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase() === currentNegocio),
+    () => allEspacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase().trim() === currentNegocio),
     [allEspacios, currentNegocio]
   );
 
@@ -110,7 +110,7 @@ export default function EspaciosPage() {
     if (editing) {
       updateEspacio(editing.id, payload);
     } else {
-      addEspacio(payload as any);
+      addEspacio(currentNegocio, payload as any);
     }
     setShowForm(false);
   };
@@ -193,7 +193,7 @@ export default function EspaciosPage() {
             <button onClick={save} className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-medium">Guardar</button>
             <button onClick={() => setShowForm(false)} className="px-4 py-2 text-slate-500">Cancelar</button>
             {editing && (
-              <button onClick={() => { if (confirm('¿Eliminar?')) { deleteEspacio(editing.id); setShowForm(false); } }} className="px-4 py-2 text-red-500 ml-auto">Eliminar</button>
+              <button onClick={() => { if (confirm('¿Eliminar?')) { deleteEspacio(editing.id, currentNegocio); setShowForm(false); } }} className="px-4 py-2 text-red-500 ml-auto">Eliminar</button>
             )}
           </div>
         </div>
