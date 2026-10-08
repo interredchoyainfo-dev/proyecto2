@@ -93,6 +93,8 @@ export function getDbForTenant(tenantId = 'giovanni') {
 
     CREATE TABLE IF NOT EXISTS reservas (
       id TEXT PRIMARY KEY,
+      negocioId TEXT,
+      espacioId TEXT,
       courtId TEXT,
       clientId TEXT,
       clientName TEXT,
@@ -104,7 +106,12 @@ export function getDbForTenant(tenantId = 'giovanni') {
       paymentMethod TEXT,
       amount REAL,
       paidAmount REAL DEFAULT 0,
+      senaPagada REAL DEFAULT 0,
+      saldoPendiente REAL DEFAULT 0,
+      personas INTEGER,
+      qrToken TEXT,
       notes TEXT,
+      estado TEXT DEFAULT 'confirmada',
       createdAt TEXT
     );
 
@@ -203,83 +210,46 @@ export function getDbForTenant(tenantId = 'giovanni') {
   safeAlter('ALTER TABLE espacios ADD COLUMN usaCapacidad INTEGER DEFAULT 0');
   safeAlter('ALTER TABLE espacios ADD COLUMN capacidad INTEGER DEFAULT 15');
   safeAlter('ALTER TABLE espacios ADD COLUMN precioPorPersona INTEGER DEFAULT 0');
+  safeAlter('ALTER TABLE reservas ADD COLUMN espacioId TEXT');
+  safeAlter('ALTER TABLE reservas ADD COLUMN negocioId TEXT');
+  safeAlter('ALTER TABLE reservas ADD COLUMN estado TEXT DEFAULT "confirmada"');
+  safeAlter('ALTER TABLE reservas ADD COLUMN personas INTEGER');
+  safeAlter('ALTER TABLE reservas ADD COLUMN senaPagada REAL DEFAULT 0');
+  safeAlter('ALTER TABLE reservas ADD COLUMN saldoPendiente REAL DEFAULT 0');
+  safeAlter('ALTER TABLE reservas ADD COLUMN qrToken TEXT');
 
-  // Si la base de datos está vacía, sembramos sus datos iniciales independientes
+  // Si la base de datos está vacía, sembramos datos iniciales SOLO para giovanni
   const prodCount = db.prepare('SELECT COUNT(*) as c FROM productos').get().c;
   const espCount = db.prepare('SELECT COUNT(*) as c FROM espacios').get().c;
 
-  if (prodCount === 0 && espCount === 0) {
-    console.log(`[MultiTenant DB] Creando y sembrando base de datos independiente para: ${safeId}`);
+  if (prodCount === 0 && espCount === 0 && safeId === 'giovanni') {
+    console.log(`[MultiTenant DB] Creando y sembrando base de datos demo para: ${safeId}`);
 
-    if (safeId === 'giovanni') {
-      const seedFile = path.join(__dirname, 'seed.json');
-      if (fs.existsSync(seedFile)) {
-        const seed = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
-        const insProd = db.prepare(
-          'INSERT INTO productos (id,name,price,stock,category,icon,destinoComanda,disponible) VALUES (?,?,?,?,?,?,?,?)'
-        );
-        for (const p of seed.productos || []) {
-          insProd.run(p.id, p.name, p.price, p.stock, p.category, p.icon, p.destinoComanda, p.disponible ? 1 : 0);
-        }
-
-        const insMesa = db.prepare(
-          'INSERT INTO mesas (id,numero,sector,capacidad,estado) VALUES (?,?,?,?,?)'
-        );
-        for (const m of seed.mesas || []) {
-          insMesa.run(m.id, m.numero, m.sector, m.capacidad, m.estado);
-        }
-
-        const insEsp = db.prepare(
-          'INSERT INTO espacios (id,name,type,status,precioHora,isActive) VALUES (?,?,?,?,?,?)'
-        );
-        for (const e of seed.espacios || []) {
-          insEsp.run(e.id, e.name, e.type, e.status, e.precioHora, e.isActive ? 1 : 0);
-        }
+    const seedFile = path.join(__dirname, 'seed.json');
+    if (fs.existsSync(seedFile)) {
+      const seed = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
+      const insProd = db.prepare(
+        'INSERT INTO productos (id,name,price,stock,category,icon,destinoComanda,disponible) VALUES (?,?,?,?,?,?,?,?)'
+      );
+      for (const p of seed.productos || []) {
+        insProd.run(p.id, p.name, p.price, p.stock, p.category, p.icon, p.destinoComanda, p.disponible ? 1 : 0);
       }
-    } else if (safeId === 'oasispadel') {
-      // Base de datos dedicada para Oasis Padel Club
-      const insEsp = db.prepare('INSERT INTO espacios (id,name,type,status,precioHora,isActive) VALUES (?,?,?,?,?,?)');
-      insEsp.run('op-esp-1', 'Cancha Padel 1 Panorámica (World Padel)', 'padel', 'libre', 15000, 1);
-      insEsp.run('op-esp-2', 'Cancha Padel 2 Central Cristal', 'padel', 'libre', 16000, 1);
-      insEsp.run('op-esp-3', 'Cancha Padel 3 Cubierta Pro', 'padel', 'libre', 15000, 1);
-      insEsp.run('op-esp-4', 'Cancha Padel 4 Vidriada Exterior', 'padel', 'libre', 14000, 1);
 
-      const insMesa = db.prepare('INSERT INTO mesas (id,numero,sector,capacidad,estado) VALUES (?,?,?,?,?)');
-      insMesa.run('op-m-1', 1, 'terraza', 4, 'libre');
-      insMesa.run('op-m-2', 2, 'terraza', 4, 'libre');
-      insMesa.run('op-m-3', 3, 'lounge', 6, 'libre');
-      insMesa.run('op-m-4', 4, 'lounge', 6, 'libre');
-      insMesa.run('op-m-5', 5, 'bar', 2, 'libre');
-      insMesa.run('op-m-6', 6, 'bar', 4, 'libre');
+      const insMesa = db.prepare(
+        'INSERT INTO mesas (id,numero,sector,capacidad,estado) VALUES (?,?,?,?,?)'
+      );
+      for (const m of seed.mesas || []) {
+        insMesa.run(m.id, m.numero, m.sector, m.capacidad, m.estado);
+      }
 
-      const insProd = db.prepare('INSERT INTO productos (id,name,price,stock,category,icon,destinoComanda,disponible) VALUES (?,?,?,?,?,?,?,?)');
-      insProd.run('op-p-1', 'Tubo Pelotas Bullpadel Gold', 12000, 30, 'padel', 'sports_tennis', 'bar', 1);
-      insProd.run('op-p-2', 'Alquiler Paleta Siux Carbon', 4500, 10, 'padel', 'sports_tennis', 'bar', 1);
-      insProd.run('op-p-3', 'Overgrip Wilson Pro x3', 3500, 40, 'padel', 'sports_tennis', 'bar', 1);
-      insProd.run('op-p-4', 'Gatorade 500ml Manzana/Blue', 3500, 60, 'bebidas', 'water_drop', 'bar', 1);
-      insProd.run('op-p-5', 'Agua Mineral 500ml', 2500, 80, 'bebidas', 'water_drop', 'bar', 1);
-      insProd.run('op-p-6', 'Cerveza Corona 330ml', 4500, 48, 'cervezas', 'sports_bar', 'bar', 1);
-      insProd.run('op-p-7', 'Tostado Jamón y Queso', 5500, 30, 'cafeteria', 'lunch_dining', 'cocina', 1);
-      insProd.run('op-p-8', 'Barra Proteica Ena', 2800, 50, 'snacks', 'restaurant', 'bar', 1);
-      insProd.run('op-p-9', 'Café Expresso', 2200, 60, 'cafeteria', 'coffee', 'bar', 1);
-    } else {
-      // Datos iniciales base limpios para cualquier nuevo negocio que se registre
-      const insEsp = db.prepare('INSERT INTO espacios (id,name,type,status,precioHora,isActive) VALUES (?,?,?,?,?,?)');
-      insEsp.run(`${safeId}-c1`, 'Cancha 1', 'deportes', 'libre', 12000, 1);
-      insEsp.run(`${safeId}-c2`, 'Cancha 2', 'deportes', 'libre', 12000, 1);
-
-      const insMesa = db.prepare('INSERT INTO mesas (id,numero,sector,capacidad,estado) VALUES (?,?,?,?,?)');
-      insMesa.run(`${safeId}-m1`, 1, 'salon', 4, 'libre');
-      insMesa.run(`${safeId}-m2`, 2, 'salon', 4, 'libre');
-      insMesa.run(`${safeId}-m3`, 3, 'patio', 4, 'libre');
-      insMesa.run(`${safeId}-m4`, 4, 'patio', 6, 'libre');
-
-      const insProd = db.prepare('INSERT INTO productos (id,name,price,stock,category,icon,destinoComanda,disponible) VALUES (?,?,?,?,?,?,?,?)');
-      insProd.run(`${safeId}-p1`, 'Agua Mineral 500ml', 2500, 50, 'bebidas', 'water_drop', 'bar', 1);
-      insProd.run(`${safeId}-p2`, 'Bebida Isotónica', 3500, 40, 'bebidas', 'water_drop', 'bar', 1);
-      insProd.run(`${safeId}-p3`, 'Café Clásico', 2000, 50, 'cafeteria', 'coffee', 'bar', 1);
-      insProd.run(`${safeId}-p4`, 'Tostado Especial', 5000, 20, 'cafeteria', 'lunch_dining', 'cocina', 1);
+      const insEsp = db.prepare(
+        'INSERT INTO espacios (id,name,type,status,precioHora,isActive) VALUES (?,?,?,?,?,?)'
+      );
+      for (const e of seed.espacios || []) {
+        insEsp.run(e.id, e.name, e.type, e.status, e.precioHora, e.isActive ? 1 : 0);
+      }
     }
+  }
 
     db.prepare("INSERT OR IGNORE INTO caja_sesion (id, status) VALUES (1, 'cerrada')").run();
     console.log(`[MultiTenant DB] Base de datos para ${safeId} inicializada correctamente.`);

@@ -93,7 +93,7 @@ export default function TVTurnos() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {todayRes.slice(0, 6).map((r) => {
-              const esp = espacios.find((e) => e.id === r.courtId);
+              const esp = espacios.find((e) => e.id === (r.espacioId || (r as any).courtId));
               return (
                 <div
                   key={r.id}
@@ -105,7 +105,7 @@ export default function TVTurnos() {
                   </div>
                   <div className="min-w-0">
                     <p className="font-bold truncate">{r.clientName}</p>
-                    <p className="text-sm text-slate-400">{esp?.name || r.courtId}</p>
+                    <p className="text-sm text-slate-400">{esp?.name || r.espacioId || (r as any).courtId}</p>
                   </div>
                 </div>
               );

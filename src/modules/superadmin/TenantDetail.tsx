@@ -13,6 +13,8 @@ export default function TenantDetail() {
   const updatePlan = useSuperAdminStore((s) => s.updatePlan);
   const updateTenant = useSuperAdminStore((s) => s.updateTenant);
   const toggleTenantActive = useSuperAdminStore((s) => s.toggleTenantActive);
+  const deleteTenant = useSuperAdminStore((s) => s.deleteTenant);
+  const resetTenantDataToZero = useSuperAdminStore((s) => s.resetTenantDataToZero);
 
   const tenant = tenants.find((t) => t.id === tenantId || t.slug === tenantId);
 
@@ -81,6 +83,30 @@ export default function TenantDetail() {
     if (cleanSlug !== tenant.slug) {
       navigate(`/superadmin/tenants/${cleanSlug}`);
     }
+  };
+
+  const handleResetToZero = () => {
+    if (!tenant) return;
+    const ok = window.confirm(
+      `¿Estás seguro de reiniciar todas las reservas, ventas y movimientos de caja de "${tenant.nombre}" a 0?\n\nLos espacios y la configuración se mantendrán intactos. Ideal para dejar en 0 antes de entregar al cliente.`
+    );
+    if (!ok) return;
+    resetTenantDataToZero(tenant.id);
+    alert(`Se reiniciaron los datos de "${tenant.nombre}" a 0 correctamente.`);
+  };
+
+  const handleDeleteTenant = () => {
+    if (!tenant) return;
+    if (tenant.slug.toLowerCase() === 'giovanni' || tenant.id.toLowerCase() === 'giovanni') {
+      alert('El complejo Giovanni es la base del sistema y no puede eliminarse.');
+      return;
+    }
+    const ok = window.confirm(
+      `¿ATENCIÓN: Estás seguro de eliminar permanentemente el negocio "${tenant.nombre}" (/${tenant.slug})?\n\nEsta acción borrará el complejo y todos sus datos asociados.`
+    );
+    if (!ok) return;
+    deleteTenant(tenant.id);
+    navigate('/superadmin/tenants');
   };
 
   return (
@@ -467,6 +493,41 @@ export default function TenantDetail() {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Zona de Entrega al Cliente y Acciones Críticas */}
+      <div className="bg-[#121722] rounded-2xl border border-red-500/20 p-6 shadow-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-red-400 text-sm flex items-center gap-2">
+              <Icon name="warning" size={18} />
+              Gestión de Entrega y Operaciones Críticas
+            </h3>
+            <p className="text-xs text-slate-400">
+              Reiniciar estadísticas y movimientos a 0 antes de entregar el sistema al cliente, o eliminar el inquilino.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <button
+            onClick={handleResetToZero}
+            className="px-4 py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all flex items-center gap-2"
+          >
+            <Icon name="history" size={16} />
+            Reiniciar Reservas, Ventas y Caja a 0
+          </button>
+
+          {tenant.slug.toLowerCase() !== 'giovanni' && tenant.id.toLowerCase() !== 'giovanni' && (
+            <button
+              onClick={handleDeleteTenant}
+              className="px-4 py-2.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 text-xs font-semibold transition-all flex items-center gap-2"
+            >
+              <Icon name="delete" size={16} />
+              Eliminar Complejo Permanentemente
+            </button>
+          )}
         </div>
       </div>
     </div>

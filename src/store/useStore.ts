@@ -7,8 +7,8 @@ import {
   persistCajaSesion,
   persistCajaMovimiento,
 } from '../components/DbSync';
+import { useEspaciosStore } from './useEspaciosStore';
 import type {
-  Court,
   Client,
   Reservation,
   Product,
@@ -20,14 +20,6 @@ import type {
   ViewId,
   PaymentMethod,
 } from '../types';
-
-const initialCourts: Court[] = [
-  { id: 'c1', negocioId: 'giovanni', name: 'Cancha 1', type: 'cancha', status: 'libre' },
-  { id: 'c2', negocioId: 'giovanni', name: 'Cancha 2', type: 'cancha', status: 'reservada', currentReservationId: 'r1' },
-  { id: 'c3', negocioId: 'giovanni', name: 'Cancha 3', type: 'cancha', status: 'en_juego', currentReservationId: 'r2' },
-  { id: 'c4', negocioId: 'giovanni', name: 'Cancha 4', type: 'cancha', status: 'libre' },
-  { id: 's1', negocioId: 'giovanni', name: 'Salón de Eventos', type: 'salon', status: 'mantenimiento' },
-];
 
 const initialClients: Client[] = [
   {
@@ -72,7 +64,7 @@ const initialReservations: Reservation[] = [
   {
     id: 'r1',
     negocioId: 'giovanni',
-    courtId: 'c2',
+    espacioId: 'c2',
     clientId: 'cl1',
     clientName: 'Juan Pérez',
     clientPhone: '11-2345-6789',
@@ -83,12 +75,13 @@ const initialReservations: Reservation[] = [
     paymentMethod: 'transferencia',
     amount: 15000,
     paidAmount: 5000,
+    estado: 'confirmada',
     createdAt: new Date().toISOString(),
   },
   {
     id: 'r2',
     negocioId: 'giovanni',
-    courtId: 'c3',
+    espacioId: 'c3',
     clientId: 'cl2',
     clientName: 'María González',
     clientPhone: '11-9876-5432',
@@ -99,6 +92,7 @@ const initialReservations: Reservation[] = [
     paymentMethod: 'efectivo',
     amount: 20000,
     paidAmount: 20000,
+    estado: 'en_curso',
     createdAt: new Date().toISOString(),
   },
 ];
@@ -266,11 +260,11 @@ const initialConfig: SystemConfig = {
     { day: 6, open: '09:00', close: '01:00' }, // Sábado
   ],
   prices: [
-    { courtId: 'c1', dayPrice: 12000, nightPrice: 15000, nightStartHour: 18 },
-    { courtId: 'c2', dayPrice: 12000, nightPrice: 15000, nightStartHour: 18 },
-    { courtId: 'c3', dayPrice: 14000, nightPrice: 18000, nightStartHour: 18 },
-    { courtId: 'c4', dayPrice: 14000, nightPrice: 18000, nightStartHour: 18 },
-    { courtId: 's1', dayPrice: 50000, nightPrice: 70000, nightStartHour: 18 },
+    { espacioId: 'c1', dayPrice: 12000, nightPrice: 15000, nightStartHour: 18 },
+    { espacioId: 'c2', dayPrice: 12000, nightPrice: 15000, nightStartHour: 18 },
+    { espacioId: 'c3', dayPrice: 14000, nightPrice: 18000, nightStartHour: 18 },
+    { espacioId: 'c4', dayPrice: 14000, nightPrice: 18000, nightStartHour: 18 },
+    { espacioId: 's1', dayPrice: 50000, nightPrice: 70000, nightStartHour: 18 },
   ],
 };
 
@@ -289,13 +283,11 @@ interface AppState {
   toggleSidebar: () => void;
   toggleDarkMode: () => void;
   currentUser: User;
-  courts: Court[];
-  updateCourtStatus: (id: string, status: Court['status'], reservationId?: string) => void;
   clients: Client[];
   addClient: (client: Omit<Client, 'id' | 'createdAt' | 'totalReservations' | 'noShows'>) => void;
   updateClient: (id: string, data: Partial<Client>) => void;
   reservations: Reservation[];
-  addReservation: (res: Omit<Reservation, 'id' | 'createdAt'>) => void;
+  addReservation: (res: Omit<Reservation, 'id' | 'createdAt'> & { courtId?: string }) => void;
   updateReservation: (id: string, data: Partial<Reservation>) => void;
   products: Product[];
   addProduct: (product: Omit<Product, 'id'>) => void;
@@ -315,7 +307,6 @@ interface AppState {
   config: SystemConfig;
   updateConfig: (cfg: Partial<SystemConfig>) => void;
   // ─── Tenant-scoped getters ─────────────────────────────
-  getCourtsByTenant: (negocioId: string) => Court[];
   getClientsByTenant: (negocioId: string) => Client[];
   getReservationsByTenant: (negocioId: string) => Reservation[];
   getProductsByTenant: (negocioId: string) => Product[];
@@ -337,7 +328,6 @@ export const useStore = create<AppState>()(
       sidebarCollapsed: false,
       darkMode: true,
       currentUser,
-      courts: initialCourts,
       clients: initialClients,
       reservations: initialReservations,
       products: initialProducts,
@@ -354,13 +344,6 @@ export const useStore = create<AppState>()(
           document.documentElement.classList.toggle('dark', next);
           return { darkMode: next };
         }),
-
-      updateCourtStatus: (id, status, reservationId) =>
-        set((s) => ({
-          courts: s.courts.map((c) =>
-            c.id === id ? { ...c, status, currentReservationId: reservationId } : c
-          ),
-        })),
 
       addClient: (client) => {
         const id = `cl${Date.now()}`;
@@ -387,12 +370,35 @@ export const useStore = create<AppState>()(
 
       addReservation: (res) => {
         const id = `r${Date.now()}`;
-        const full = { ...res, id, negocioId: res.negocioId || 'giovanni', createdAt: new Date().toISOString() };
+        const targetEspacio = res.espacioId || (res as any).courtId || '';
+        const full: Reservation = {
+          id,
+          negocioId: res.negocioId || 'giovanni',
+          espacioId: targetEspacio,
+          clientId: res.clientId,
+          clientName: res.clientName,
+          clientPhone: res.clientPhone,
+          date: res.date,
+          startTime: res.startTime,
+          endTime: res.endTime,
+          paymentStatus: res.paymentStatus,
+          paymentMethod: res.paymentMethod,
+          amount: res.amount,
+          paidAmount: res.paidAmount,
+          senaPagada: res.senaPagada,
+          saldoPendiente: res.saldoPendiente,
+          personas: res.personas,
+          qrToken: res.qrToken,
+          notes: res.notes,
+          estado: res.estado || 'confirmada',
+          createdAt: new Date().toISOString(),
+        };
         set((s) => ({
           reservations: [...s.reservations, full],
         }));
-        const courtOrEspacio = res.courtId || res.espacioId;
-        if (courtOrEspacio) get().updateCourtStatus(courtOrEspacio, 'reservada', id);
+        if (targetEspacio) {
+          useEspaciosStore.getState().updateStatus(targetEspacio, 'reservada', id);
+        }
         persistReserva(full).catch(() => {});
       },
 
@@ -516,17 +522,18 @@ export const useStore = create<AppState>()(
       updateConfig: (cfg) => set((s) => ({ config: { ...s.config, ...cfg } })),
 
       // ─── Tenant-scoped getters ─────────────────────────────
-      getCourtsByTenant: (negocioId) => {
-        const clean = (negocioId || 'giovanni').toLowerCase();
-        return get().courts.filter((c) => (c.negocioId || 'giovanni').toLowerCase() === clean);
-      },
       getClientsByTenant: (negocioId) => {
         const clean = (negocioId || 'giovanni').toLowerCase();
         return get().clients.filter((c) => (c.negocioId || 'giovanni').toLowerCase() === clean);
       },
       getReservationsByTenant: (negocioId) => {
         const clean = (negocioId || 'giovanni').toLowerCase();
-        return get().reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() === clean);
+        return get().reservations
+          .filter((r) => (r.negocioId || 'giovanni').toLowerCase() === clean)
+          .map((r) => ({
+            ...r,
+            espacioId: r.espacioId || (r as any).courtId || '',
+          }));
       },
       getProductsByTenant: (negocioId) => {
         const clean = (negocioId || 'giovanni').toLowerCase();

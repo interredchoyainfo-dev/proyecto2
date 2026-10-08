@@ -59,7 +59,7 @@ export function CourtGrid() {
     return espacios.map((esp) => {
       const todayRes = reservations.filter(
         (r) =>
-          (r.courtId === esp.id || r.espacioId === esp.id) &&
+          (r.espacioId === esp.id || (r as any).courtId === esp.id) &&
           r.date === today &&
           r.estado !== 'cancelada'
       );

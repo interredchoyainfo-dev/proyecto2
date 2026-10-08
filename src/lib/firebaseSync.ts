@@ -149,10 +149,31 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
     const unsubEspacios = onSnapshot(
       getTenantCollection('espacios', targetTenant),
       (snap) => {
-        if (!snap.empty) {
-          const espacios = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Espacio));
-          useEspaciosStore.setState({ espacios });
-        } else {
+        const tenantEspacios = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Espacio))
+          .filter((e) => {
+            // Para negocios que no sean giovanni, no permitir espacios demo heredados
+            if (targetTenant !== 'giovanni') {
+              if (
+                e.id.startsWith('op-') ||
+                e.id.startsWith('demo-') ||
+                e.id.startsWith('esp-oasispadel-1') ||
+                e.id.startsWith('esp-oasispadel-2') ||
+                ['c1', 'c2', 'c3', 'c4', 's1'].includes(e.id)
+              ) {
+                return false;
+              }
+            }
+            return true;
+          });
+
+        const otherEspacios = useEspaciosStore
+          .getState()
+          .espacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase() !== targetTenant);
+
+        useEspaciosStore.setState({ espacios: [...otherEspacios, ...tenantEspacios] });
+
+        if (snap.empty && targetTenant === 'giovanni') {
           seedInitialTenantCollectionIfEmpty('espacios', targetTenant);
         }
       },
@@ -180,11 +201,15 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
 
 /**
  * Si una colección en Firestore está vacía para este negocio,
- * sembramos los datos iniciales de ese negocio.
+ * sembramos los datos iniciales de ese negocio SOLO SI ES GIOVANNI (base demo).
+ * Otros negocios empiezan 100% limpios.
  */
 const seededTenants: Record<string, boolean> = {};
 
 async function seedInitialTenantCollectionIfEmpty(colName: string, tenantId: string) {
+  // Solo se debe sembrar datos demo iniciales si el negocio es giovanni
+  if (tenantId !== 'giovanni') return;
+
   const seedKey = `${tenantId}_${colName}`;
   if (seededTenants[seedKey]) return;
   seededTenants[seedKey] = true;
@@ -217,7 +242,7 @@ async function seedInitialTenantCollectionIfEmpty(colName: string, tenantId: str
         console.log(`Firestore (${tenantId}): Migradas ${current.length} mesas iniciales.`);
       }
     } else if (colName === 'espacios') {
-      const current = useEspaciosStore.getState().espacios;
+      const current = useEspaciosStore.getState().getEspaciosByTenant('giovanni');
       if (current.length > 0) {
         current.forEach((e) => {
           const ref = getTenantDoc('espacios', e.id, tenantId);
@@ -247,6 +272,57 @@ async function seedInitialTenantCollectionIfEmpty(colName: string, tenantId: str
     }
   } catch (e) {
     console.warn(`No se pudo sembrar colección ${colName} para ${tenantId}:`, e);
+  }
+}
+
+/** Reinicia reservas, ventas, pedidos y movimientos de caja en Firestore a 0 */
+export async function firebaseResetTenantDataToZero(tenantId: string) {
+  try {
+    const tid = (tenantId || getCurrentTenant()).toLowerCase().trim();
+    const batch = writeBatch(firestore);
+
+    const [resSnap, pedSnap, movSnap] = await Promise.all([
+      getDocs(getTenantCollection('reservas', tid)),
+      getDocs(getTenantCollection('pedidos', tid)),
+      getDocs(getTenantCollection('caja_movimientos', tid)),
+    ]);
+
+    resSnap.docs.forEach((d) => batch.delete(d.ref));
+    pedSnap.docs.forEach((d) => batch.delete(d.ref));
+    movSnap.docs.forEach((d) => batch.delete(d.ref));
+
+    await batch.commit();
+
+    // Resetear mesas a libre
+    const mesasSnap = await getDocs(getTenantCollection('mesas', tid));
+    if (!mesasSnap.empty) {
+      const batchMesas = writeBatch(firestore);
+      mesasSnap.docs.forEach((d) => {
+        batchMesas.update(d.ref, { estado: 'libre', pedidoActivoId: null });
+      });
+      await batchMesas.commit();
+    }
+  } catch (err) {
+    console.warn(`Error al reiniciar datos en Firestore para ${tenantId}:`, err);
+  }
+}
+
+/** Elimina todas las colecciones de Firestore asociadas a un tenant */
+export async function firebaseDeleteTenantData(tenantId: string) {
+  try {
+    const tid = (tenantId || '').toLowerCase().trim();
+    if (!tid || tid === 'giovanni') return;
+    const collections = ['productos', 'mesas', 'pedidos', 'reservas', 'clientes', 'espacios', 'ofertas', 'caja_movimientos'];
+    for (const col of collections) {
+      const snap = await getDocs(getTenantCollection(col, tid));
+      if (!snap.empty) {
+        const batch = writeBatch(firestore);
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    }
+  } catch (err) {
+    console.warn(`Error borrando tenant en Firestore (${tenantId}):`, err);
   }
 }
 

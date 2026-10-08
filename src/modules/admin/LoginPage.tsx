@@ -160,16 +160,6 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={async () => {
-                  await login('super', 'admin');
-                  navigate('/superadmin');
-                }}
-                className="p-2 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 text-violet-400 font-semibold border border-violet-500/20 text-left transition-colors flex items-center gap-1.5"
-              >
-                <span>👑</span> SuperAdmin SaaS
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
                   await login('admin', 'admin');
                   navigate(negocioId ? `/${negocioId}/dashboard` : '/giovanni/dashboard');
                 }}

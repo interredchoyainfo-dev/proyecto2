@@ -53,13 +53,13 @@ function metaFor(type: string) {
   return SPACE_META[type] || { tag: 'ESPACIO', blurb: 'Reservá tu turno', img: 'https://images.unsplash.com/photo-1461896836934-ffe607ba3671?w=800&q=80', icon: 'place', accentColor: '#FBBF24' };
 }
 
-function getAvailableHours(date: string, espacioId: string, reservations: { courtId?: string; date?: string; startTime: string }[]) {
+function getAvailableHours(date: string, espacioId: string, reservations: { espacioId?: string; courtId?: string; date?: string; startTime: string }[]) {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
   const currentHour = now.getHours();
   const currentMin = now.getMinutes();
   const booked = new Set(
-    reservations.filter((r) => r.courtId === espacioId && r.date === date).map((r) => r.startTime)
+    reservations.filter((r) => (r.espacioId === espacioId || (r as any).courtId === espacioId) && r.date === date).map((r) => r.startTime)
   );
   return ALL_HOURS.filter((h) => {
     if (booked.has(h)) return false;
@@ -129,7 +129,7 @@ export default function ClientReservar() {
 
   const startHourNum = parseInt(startTime.split(':')[0], 10);
   const nightStart = config.nightStartHour ?? 18;
-  const priceCfg = config.prices?.find((p) => p.courtId === espacioId);
+  const priceCfg = config.prices?.find((p) => p.espacioId === espacioId || (p as any).courtId === espacioId);
   const isNight = startHourNum >= (priceCfg?.nightStartHour ?? nightStart);
   const basePrice = isNight
     ? (espacio?.precioNoche ?? priceCfg?.nightPrice ?? espacio?.precioHora ?? 15000)
@@ -137,17 +137,17 @@ export default function ClientReservar() {
   const amount = espacio?.usaCapacidad && espacio?.precioPorPersona ? basePrice * Math.max(1, personas) : basePrice;
 
   const ocupadosEnTurno = espacio?.usaCapacidad
-    ? reservations.filter((r) => (r.courtId === espacioId || (r as any).espacioId === espacioId) && r.date === date && r.startTime === startTime).reduce((s, r) => s + ((r as any).personas || 1), 0)
+    ? reservations.filter((r) => (r.espacioId === espacioId || (r as any).courtId === espacioId) && r.date === date && r.startTime === startTime).reduce((s, r) => s + (r.personas || 1), 0)
     : 0;
   const cuposLibres = espacio?.usaCapacidad ? Math.max(0, (espacio.capacidad || 0) - ocupadosEnTurno) : null;
   const availableHours = espacioId ? getAvailableHours(date, espacioId, reservations) : [];
 
   const dayPrice = (id: string) => {
-    const p = config.prices?.find((x) => x.courtId === id);
+    const p = config.prices?.find((x) => x.espacioId === id || (x as any).courtId === id);
     return p?.dayPrice ?? espacios.find((e) => e.id === id)?.precioHora ?? 12000;
   };
   const nightPrice = (id: string) => {
-    const p = config.prices?.find((x) => x.courtId === id);
+    const p = config.prices?.find((x) => x.espacioId === id || (x as any).courtId === id);
     return p?.nightPrice ?? Math.round((espacios.find((e) => e.id === id)?.precioHora || 12000) * 1.25);
   };
 
@@ -172,12 +172,21 @@ export default function ClientReservar() {
     }
     const paid = paymentType === 'pagado' ? amount : paymentType === 'senado' ? senaAmount || Math.round(amount * 0.3) : 0;
     addReservation({
-      courtId: espacioId, clientId, clientName: name, clientPhone: phone,
-      date, startTime, endTime: endHour, paymentStatus: paymentType,
+      espacioId,
+      clientId,
+      clientName: name,
+      clientPhone: phone,
+      date,
+      startTime,
+      endTime: endHour,
+      paymentStatus: paymentType,
       paymentMethod: paymentType !== 'pendiente' ? 'transferencia' : undefined,
-      amount, paidAmount: paid,
-      ...(espacio?.usaCapacidad ? { personas } as any : {}),
-    } as any);
+      amount,
+      paidAmount: paid,
+      personas: espacio?.usaCapacidad ? personas : undefined,
+      estado: 'confirmada',
+      negocioId: currentNegocio,
+    });
     updateStatus(espacioId, 'reservada');
     setDone(true);
   };

@@ -129,7 +129,7 @@ export default function ClientMisReservas() {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex flex-col">
                           <p className="font-black text-lg uppercase tracking-tight" style={{ color: C.textPrimary }}>
-                            {getEspacioName(r.courtId)}
+                            {getEspacioName(r.espacioId || (r as any).courtId || '')}
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             <Icon name="calendar_today" size={14} style={{ color: C.textMuted }} />

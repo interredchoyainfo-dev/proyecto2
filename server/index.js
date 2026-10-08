@@ -87,6 +87,31 @@ const rowCliente = (r) =>
     createdAt: r.createdAt,
   };
 
+const rowReserva = (r, tenantId = 'giovanni') =>
+  r && {
+    id: r.id,
+    negocioId: r.negocioId || tenantId,
+    espacioId: r.espacioId || r.courtId,
+    courtId: r.courtId || r.espacioId,
+    clientId: r.clientId,
+    clientName: r.clientName,
+    clientPhone: r.clientPhone || '',
+    date: r.date,
+    startTime: r.startTime,
+    endTime: r.endTime,
+    paymentStatus: r.paymentStatus || 'pendiente',
+    paymentMethod: r.paymentMethod || 'efectivo',
+    amount: r.amount ?? 0,
+    paidAmount: r.paidAmount ?? (r.senaPagada ?? 0),
+    senaPagada: r.senaPagada ?? (r.paidAmount ?? 0),
+    saldoPendiente: r.saldoPendiente ?? Math.max(0, (r.amount ?? 0) - (r.paidAmount ?? (r.senaPagada ?? 0))),
+    personas: r.personas || undefined,
+    qrToken: r.qrToken || undefined,
+    notes: r.notes || '',
+    estado: r.estado || 'confirmada',
+    createdAt: r.createdAt || new Date().toISOString(),
+  };
+
 // ========== PRODUCTOS (AISLADOS POR NEGOCIO) ==========
 app.get('/api/productos', (req, res) => {
   const rows = req.db.prepare('SELECT * FROM productos ORDER BY category, name').all();
@@ -281,18 +306,28 @@ app.delete('/api/espacios/:id', (req, res) => {
 // ========== RESERVAS (AISLADAS POR NEGOCIO) ==========
 app.get('/api/reservas', (req, res) => {
   const rows = req.db.prepare('SELECT * FROM reservas ORDER BY date, startTime').all();
-  res.json(rows);
+  res.json(rows.map((r) => rowReserva(r, req.tenantId)));
 });
 
 app.post('/api/reservas', (req, res) => {
   const r = req.body;
   const id = r.id || `res-${Date.now()}`;
+  const espacioId = r.espacioId || r.courtId;
+  const estado = r.estado || 'confirmada';
+  const negocioId = r.negocioId || req.tenantId;
+  const amount = r.amount ?? 0;
+  const paidAmount = r.paidAmount ?? (r.senaPagada ?? 0);
+  const senaPagada = r.senaPagada ?? paidAmount;
+  const saldoPendiente = r.saldoPendiente ?? Math.max(0, amount - paidAmount);
+
   req.db.prepare(
-    `INSERT INTO reservas (id,courtId,clientId,clientName,clientPhone,date,startTime,endTime,paymentStatus,paymentMethod,amount,paidAmount,notes,createdAt)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO reservas (id,negocioId,espacioId,courtId,clientId,clientName,clientPhone,date,startTime,endTime,paymentStatus,paymentMethod,amount,paidAmount,senaPagada,saldoPendiente,personas,qrToken,notes,estado,createdAt)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     id,
-    r.courtId,
+    negocioId,
+    espacioId,
+    espacioId,
     r.clientId,
     r.clientName,
     r.clientPhone || '',
@@ -301,22 +336,43 @@ app.post('/api/reservas', (req, res) => {
     r.endTime,
     r.paymentStatus || 'pendiente',
     r.paymentMethod || 'efectivo',
-    r.amount ?? 0,
-    r.paidAmount ?? 0,
+    amount,
+    paidAmount,
+    senaPagada,
+    saldoPendiente,
+    r.personas ?? null,
+    r.qrToken || null,
     r.notes || '',
+    estado,
     r.createdAt || new Date().toISOString()
   );
-  res.json(req.db.prepare('SELECT * FROM reservas WHERE id=?').get(id));
+  res.json(rowReserva(req.db.prepare('SELECT * FROM reservas WHERE id=?').get(id), req.tenantId));
 });
 
 app.put('/api/reservas/:id', (req, res) => {
   const r = req.body;
   const cur = req.db.prepare('SELECT * FROM reservas WHERE id=?').get(req.params.id);
   if (!cur) return res.status(404).json({ error: 'not found' });
+
+  const espacioId = r.espacioId ?? r.courtId ?? cur.espacioId ?? cur.courtId;
+  const negocioId = r.negocioId ?? cur.negocioId ?? req.tenantId;
+  const amount = r.amount ?? cur.amount ?? 0;
+  const paidAmount = r.paidAmount ?? cur.paidAmount ?? 0;
+  const senaPagada = r.senaPagada ?? cur.senaPagada ?? paidAmount;
+  const saldoPendiente = r.saldoPendiente ?? cur.saldoPendiente ?? Math.max(0, amount - paidAmount);
+  const estado = r.estado ?? cur.estado ?? 'confirmada';
+
   req.db.prepare(
-    `UPDATE reservas SET courtId=?, clientId=?, clientName=?, clientPhone=?, date=?, startTime=?, endTime=?, paymentStatus=?, paymentMethod=?, amount=?, paidAmount=?, notes=? WHERE id=?`
+    `UPDATE reservas SET
+       negocioId=?, espacioId=?, courtId=?, clientId=?, clientName=?, clientPhone=?,
+       date=?, startTime=?, endTime=?, paymentStatus=?, paymentMethod=?, amount=?,
+       paidAmount=?, senaPagada=?, saldoPendiente=?, personas=?, qrToken=?, notes=?,
+       estado=?
+     WHERE id=?`
   ).run(
-    r.courtId ?? cur.courtId,
+    negocioId,
+    espacioId,
+    espacioId,
     r.clientId ?? cur.clientId,
     r.clientName ?? cur.clientName,
     r.clientPhone ?? cur.clientPhone,
@@ -325,12 +381,17 @@ app.put('/api/reservas/:id', (req, res) => {
     r.endTime ?? cur.endTime,
     r.paymentStatus ?? cur.paymentStatus,
     r.paymentMethod ?? cur.paymentMethod,
-    r.amount ?? cur.amount,
-    r.paidAmount ?? cur.paidAmount,
-    r.notes ?? cur.notes,
+    amount,
+    paidAmount,
+    senaPagada,
+    saldoPendiente,
+    r.personas !== undefined ? r.personas : cur.personas,
+    r.qrToken !== undefined ? r.qrToken : cur.qrToken,
+    r.notes !== undefined ? r.notes : cur.notes,
+    estado,
     req.params.id
   );
-  res.json(req.db.prepare('SELECT * FROM reservas WHERE id=?').get(req.params.id));
+  res.json(rowReserva(req.db.prepare('SELECT * FROM reservas WHERE id=?').get(req.params.id), req.tenantId));
 });
 
 app.delete('/api/reservas/:id', (req, res) => {
@@ -633,7 +694,7 @@ app.get('/api/sync', (req, res) => {
   const productos = req.db.prepare('SELECT * FROM productos').all().map(rowProducto);
   const mesas = req.db.prepare('SELECT * FROM mesas ORDER BY numero').all().map((r) => rowMesa(r, req.tenantId));
   const espacios = req.db.prepare('SELECT * FROM espacios').all().map((r) => rowEspacio(r, req.tenantId));
-  const reservas = req.db.prepare('SELECT * FROM reservas').all();
+  const reservas = req.db.prepare('SELECT * FROM reservas').all().map((r) => rowReserva(r, req.tenantId));
   const clientes = req.db.prepare('SELECT * FROM clientes').all();
   const pedidosRaw = req.db.prepare('SELECT * FROM pedidos').all();
   const itemsStmt = req.db.prepare('SELECT * FROM pedido_items WHERE pedidoId=?');

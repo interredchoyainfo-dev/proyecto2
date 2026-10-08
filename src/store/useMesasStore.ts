@@ -147,7 +147,7 @@ export const useMesasStore = create<MesasState>()(
             const items = p.items.map((i) => {
               if (i.estadoItem === 'pendiente') {
                 count++;
-                return { ...i, estadoItem: 'en_marcha' as const };
+                return { ...i, estadoItem: 'pendiente' as const };
               }
               return i;
             });

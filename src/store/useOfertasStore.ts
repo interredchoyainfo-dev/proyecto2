@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { idbStorage } from './idbStorage';
 
 export interface Oferta {
@@ -100,6 +100,6 @@ export const useOfertasStore = create<OfertasState>()(
 
       getOfertasActivasAhora: () => get().ofertas.filter((o) => isOfertaVigente(o)),
     }),
-    { name: 'giovanni-ofertas-storage', storage: idbStorage as any }
+    { name: 'giovanni-ofertas-storage-v2', storage: createJSONStorage(() => idbStorage) }
   )
 );

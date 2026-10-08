@@ -65,26 +65,54 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
         if (serialized === lastPayload) return;
         lastPayload = serialized;
 
-        // Poblamos los stores con los datos exclusivos del negocio
-        if (data.productos) {
-          useStore.setState({ products: data.productos });
+        // Poblamos los stores asegurando no pisar con datos vacíos o catálogo incompleto
+        if (Array.isArray(data.productos) && data.productos.length > 0) {
+          const currentProds = useStore.getState().products;
+          if (currentProds.length <= data.productos.length || currentProds.length === 0) {
+            useStore.setState({ products: data.productos });
+          }
         }
-        if (data.mesas) {
+        if (Array.isArray(data.mesas) && data.mesas.length > 0) {
           useMesasStore.setState({ mesas: data.mesas });
         }
-        if (data.pedidos) {
-          useMesasStore.setState({ pedidos: data.pedidos });
+        if (Array.isArray(data.pedidos)) {
+          if (data.pedidos.length > 0 || useMesasStore.getState().pedidos.length === 0) {
+            useMesasStore.setState({ pedidos: data.pedidos });
+          }
         }
-        if (data.espacios) {
-          useEspaciosStore.setState({ espacios: data.espacios });
+        if (Array.isArray(data.espacios) && data.espacios.length > 0) {
+          const cleanEspacios = data.espacios.filter((e: any) => {
+            if (activeNegocio !== 'giovanni') {
+              if (
+                e.id.startsWith('op-') ||
+                e.id.startsWith('demo-') ||
+                ['c1', 'c2', 'c3', 'c4', 's1'].includes(e.id)
+              ) {
+                return false;
+              }
+            }
+            return true;
+          });
+          const otherEspacios = useEspaciosStore
+            .getState()
+            .espacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase() !== activeNegocio);
+          useEspaciosStore.setState({ espacios: [...otherEspacios, ...cleanEspacios] });
         }
-        if (data.reservas) {
-          useStore.setState({ reservations: data.reservas });
+        if (Array.isArray(data.reservas) && data.reservas.length > 0) {
+          const normalized = data.reservas.map((r: any) => ({
+            ...r,
+            espacioId: r.espacioId || r.courtId,
+            negocioId: r.negocioId || activeNegocio,
+          }));
+          const otherRes = useStore
+            .getState()
+            .reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== activeNegocio);
+          useStore.setState({ reservations: [...otherRes, ...normalized] });
         }
-        if (data.clientes) {
+        if (Array.isArray(data.clientes) && data.clientes.length > 0) {
           useStore.setState({ clients: data.clientes });
         }
-        if (data.ofertas) {
+        if (Array.isArray(data.ofertas) && data.ofertas.length > 0) {
           useOfertasStore.setState({ ofertas: data.ofertas });
         }
       } catch {

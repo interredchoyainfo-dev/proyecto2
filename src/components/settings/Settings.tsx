@@ -71,25 +71,29 @@ export function Settings() {
   };
 
   const updatePrice = (
-    courtId: string,
+    espacioId: string,
     field: 'dayPrice' | 'nightPrice' | 'nightStartHour',
     value: number
   ) => {
     let prices = config.prices || [];
-    const exists = prices.find((p) => p.courtId === courtId);
+    const exists = prices.find((p) => p.espacioId === espacioId || (p as any).courtId === espacioId);
     if (!exists) {
       prices = [
         ...prices,
-        { courtId, dayPrice: 12000, nightPrice: 15000, nightStartHour: config.nightStartHour || 18 },
+        { espacioId, dayPrice: 12000, nightPrice: 15000, nightStartHour: config.nightStartHour || 18 },
       ];
     }
-    prices = prices.map((p) => (p.courtId === courtId ? { ...p, [field]: value } : p));
+    prices = prices.map((p) =>
+      p.espacioId === espacioId || (p as any).courtId === espacioId
+        ? { ...p, espacioId, [field]: value }
+        : p
+    );
     updateConfig({ prices });
   };
 
-  const getPrice = (courtId: string) =>
-    config.prices?.find((p) => p.courtId === courtId) || {
-      courtId,
+  const getPrice = (espacioId: string) =>
+    config.prices?.find((p) => p.espacioId === espacioId || (p as any).courtId === espacioId) || {
+      espacioId,
       dayPrice: 12000,
       nightPrice: 15000,
       nightStartHour: config.nightStartHour || 18,

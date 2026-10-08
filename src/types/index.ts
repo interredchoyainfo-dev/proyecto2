@@ -40,7 +40,9 @@ export interface Negocio {
   id: string;
   slug: string;
   nombre: string;
+  subtitulo?: string;
   descripcion?: string;
+  whatsapp?: string;
   logoUrl?: string;
   theme?: ThemeConfig;
   isActive: boolean;
@@ -88,7 +90,8 @@ export interface TenantConfig {
 }
 
 // ===================== BUSINESS ENTITIES =====================
-export type CourtStatus = 'libre' | 'reservada' | 'en_juego' | 'mantenimiento';
+export type EspacioStatus = 'libre' | 'reservada' | 'en_juego' | 'mantenimiento';
+export type CourtStatus = EspacioStatus;
 export type PaymentStatus = 'pendiente' | 'senado' | 'pagado';
 export type PaymentMethod = 'efectivo' | 'transferencia' | 'mercadopago' | 'tarjeta';
 export type CashMovementType = 'ingreso' | 'egreso';
@@ -99,7 +102,7 @@ export interface Espacio {
   negocioId?: string;
   name: string;
   type: string; // cancha, salon, futbol, padel, tenis, quincho, piscina, etc.
-  status: CourtStatus;
+  status: EspacioStatus;
   precioHora?: number;
   precioDia?: number;
   precioNoche?: number;
@@ -112,8 +115,6 @@ export interface Espacio {
   capacidad?: number;
   precioPorPersona?: boolean;
 }
-
-export type Court = Espacio;
 
 export interface Client {
   id: string;
@@ -130,14 +131,13 @@ export interface Client {
 
 export interface Reservation {
   id: string;
-  negocioId?: string;
-  espacioId?: string;
-  courtId?: string;
+  negocioId: string;
+  espacioId: string;
   clientId: string;
   clientName: string;
   clientPhone: string;
-  date: string;
-  startTime: string;
+  date: string;               // YYYY-MM-DD
+  startTime: string;          // HH:mm
   endTime: string;
   paymentStatus: PaymentStatus;
   paymentMethod?: PaymentMethod;
@@ -145,9 +145,10 @@ export interface Reservation {
   paidAmount: number;
   senaPagada?: number;
   saldoPendiente?: number;
+  personas?: number;          // capacidad
   qrToken?: string;
   notes?: string;
-  estado?: 'pendiente' | 'confirmada' | 'en_curso' | 'completada' | 'cancelada';
+  estado: 'pendiente' | 'confirmada' | 'en_curso' | 'completada' | 'cancelada';
   createdAt: string;
 }
 
@@ -212,8 +213,7 @@ export interface CashMovement {
 }
 
 export interface PriceConfig {
-  espacioId?: string;
-  courtId?: string;
+  espacioId: string;
   dayPrice: number;
   nightPrice: number;
   nightStartHour: number;

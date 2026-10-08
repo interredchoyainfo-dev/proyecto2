@@ -13,11 +13,11 @@
     "dev:all": "concurrently -n api,web -c blue,green \"node server/index.js\" \"vite\""
   },
   "dependencies": {
-    "better-sqlite3": "*",
-    "concurrently": "*",
-    "cors": "*",
+    "better-sqlite3": "^11.0.0",
+    "concurrently": "^9.0.0",
+    "cors": "^2.8.5",
     "date-fns": "^4.1.0",
-    "express": "*",
+    "express": "^4.21.0",
     "firebase": "^12.19.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",

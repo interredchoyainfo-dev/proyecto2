@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { idbStorage } from "./idbStorage";
-import type { Espacio, CourtStatus } from "../types";
+import type { Espacio, EspacioStatus } from "../types";
 import { persistEspacio, deleteEspacioDb } from "../components/DbSync";
 
 // Solo el negocio base giovanni cuenta con espacios iniciales de ejemplo
@@ -19,7 +19,7 @@ interface EspaciosState {
   updateEspacio: (id: string, data: Partial<Espacio>) => void;
   deleteEspacio: (id: string) => void;
   deleteEspaciosByTenant: (negocioId: string) => void;
-  updateStatus: (id: string, status: CourtStatus, reservationId?: string) => void;
+  updateStatus: (id: string, status: EspacioStatus, reservationId?: string) => void;
   toggleActive: (id: string) => void;
   ensureTenantEspacios: (negocioId: string) => void;
   getEspaciosByTenant: (negocioId: string) => Espacio[];
@@ -48,7 +48,7 @@ export const useEspaciosStore = create<EspaciosState>()(
           ...data,
           id: `esp-${targetNegocio}-${Date.now()}`,
           negocioId: targetNegocio,
-          status: "libre" as CourtStatus,
+          status: "libre" as EspacioStatus,
           isActive: true,
         };
         set((s) => ({
@@ -112,8 +112,8 @@ export const useEspaciosStore = create<EspaciosState>()(
       },
     }),
     {
-      name: "giovanni-espacios-storage-v3",
-      storage: idbStorage as any,
+      name: "giovanni-espacios-storage-v4",
+      storage: createJSONStorage(() => idbStorage),
       migrate: (persistedState: any) => {
         if (!persistedState || !Array.isArray(persistedState.espacios)) {
           return { espacios: initialEspacios };
@@ -121,7 +121,11 @@ export const useEspaciosStore = create<EspaciosState>()(
         // Limpieza automática de espacios ficticios anteriores
         const cleaned = persistedState.espacios.filter((e: Espacio) => {
           if (!e || !e.id) return false;
-          if (e.id.startsWith("op-c") || e.id.startsWith("demo-") || e.id.startsWith("esp-oasispadel-1") || e.id.startsWith("esp-oasispadel-2")) {
+          const nid = (e.negocioId || "giovanni").toLowerCase();
+          if (e.id.startsWith("op-") || e.id.startsWith("demo-") || e.id.startsWith("esp-oasispadel-1") || e.id.startsWith("esp-oasispadel-2")) {
+            return false;
+          }
+          if (nid === "oasispadel" && ["c1", "c2", "c3", "c4", "s1"].includes(e.id)) {
             return false;
           }
           return true;

@@ -16,7 +16,6 @@ const paymentBadge: Record<string, string> = {
 
 export function Reservations() {
   const reservations = useStore((s) => s.reservations);
-  const courts = useStore((s) => s.courts);
   const allEspacios = useEspaciosStore((s) => s.espacios);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedRes, setSelectedRes] = useState<typeof reservations[0] | null>(null);
@@ -50,7 +49,7 @@ export function Reservations() {
   const activas = filtered.filter((r) => !isPast(r));
   const historial = filtered.filter((r) => isPast(r));
 
-  const courtName = (id: string) => allEspacios.find((c) => c.id === id)?.name ?? courts.find((c) => c.id === id)?.name ?? id;
+  const courtName = (id: string) => allEspacios.find((c) => c.id === id)?.name ?? id;
 
   return (
     <div className="space-y-6">
@@ -111,25 +110,35 @@ export function Reservations() {
       </div>
 
       {/* List */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div className="flex gap-2 mb-3">
-          <button
-            onClick={() => setTab('activas')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium ${
-              tab === 'activas' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-800'
-            }`}
-          >
-            Desde ahora ({activas.length})
-          </button>
-          <button
-            onClick={() => setTab('historial')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium ${
-              tab === 'historial' ? 'bg-slate-600 text-white' : 'bg-slate-100 dark:bg-slate-800'
-            }`}
-          >
-            Historial ({historial.length})
-          </button>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setTab('activas')}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                tab === 'activas'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              Desde ahora ({activas.length})
+            </button>
+            <button
+              onClick={() => setTab('historial')}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                tab === 'historial'
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              Historial ({historial.length})
+            </button>
+          </div>
+          <span className="text-xs text-slate-400 font-medium hidden sm:inline">
+            {tab === 'activas' ? 'Turnos activos' : 'Turnos anteriores'}
+          </span>
         </div>
+
         {(tab === 'activas' ? activas : historial).length === 0 ? (
           <div className="p-12 text-center text-slate-500">
             <Icon name="event_busy" size={48} className="mx-auto mb-3 opacity-50" />
@@ -154,7 +163,7 @@ export function Reservations() {
                   <div>
                     <p className="font-semibold">{r.clientName}</p>
                     <p className="text-sm text-slate-500">
-                      {courtName(r.courtId)} · {r.clientPhone}
+                      {courtName(r.espacioId || (r as any).courtId)} · {r.clientPhone}
                     </p>
                   </div>
                 </div>
@@ -199,7 +208,7 @@ export function Reservations() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Espacio</span>
-                <span className="font-medium">{courtName(selectedRes.courtId)}</span>
+                <span className="font-medium">{courtName(selectedRes.espacioId || (selectedRes as any).courtId)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Horario</span>
@@ -231,7 +240,7 @@ export function Reservations() {
             <div className="flex flex-col gap-2 pt-2">
               <a
                 href={`https://wa.me/${selectedRes.clientPhone.replace(/\D/g, '').replace(/^0/, '54')}?text=${encodeURIComponent(
-                  `Hola ${selectedRes.clientName}! Te escribimos de Complejo Giovanni por tu reserva del ${selectedRes.date} de ${selectedRes.startTime} a ${selectedRes.endTime} en ${courtName(selectedRes.courtId)}. ¿Confirmás asistencia?`
+                  `Hola ${selectedRes.clientName}! Te escribimos de Complejo Giovanni por tu reserva del ${selectedRes.date} de ${selectedRes.startTime} a ${selectedRes.endTime} en ${courtName(selectedRes.espacioId || (selectedRes as any).courtId)}. ¿Confirmás asistencia?`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"

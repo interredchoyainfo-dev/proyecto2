@@ -11,13 +11,13 @@ interface Props {
 
 export function ReservationModal({ open, onClose }: Props) {
   const allEspacios = useEspaciosStore((s) => s.espacios);
-  const courts = useMemo(() => allEspacios.filter((e) => e.isActive), [allEspacios]);
+  const espaciosList = useMemo(() => allEspacios.filter((e) => e.isActive), [allEspacios]);
   const updateEspacioStatus = useEspaciosStore((s) => s.updateStatus);
   const clients = useStore((s) => s.clients);
   const addReservation = useStore((s) => s.addReservation);
   const addClient = useStore((s) => s.addClient);
 
-  const [courtId, setCourtId] = useState('');
+  const [espacioId, setEspacioId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState('18:00');
   const [endTime, setEndTime] = useState('19:00');
@@ -33,7 +33,7 @@ export function ReservationModal({ open, onClose }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!courtId || !clientName || !clientPhone) return;
+    if (!espacioId || !clientName || !clientPhone) return;
 
     let clientId = clients.find(
       (c) => c.phone === clientPhone || c.name.toLowerCase() === clientName.toLowerCase()
@@ -45,7 +45,7 @@ export function ReservationModal({ open, onClose }: Props) {
     }
 
     addReservation({
-      courtId,
+      espacioId,
       clientId,
       clientName,
       clientPhone,
@@ -57,12 +57,13 @@ export function ReservationModal({ open, onClose }: Props) {
       amount,
       paidAmount: paymentStatus === 'pagado' ? amount : paidAmount,
       notes: notes || undefined,
-    });
-    updateEspacioStatus(courtId, 'reservada');
+      estado: 'confirmada',
+    } as any);
+    updateEspacioStatus(espacioId, 'reservada');
 
     onClose();
     // reset
-    setCourtId('');
+    setEspacioId('');
     setClientName('');
     setClientPhone('');
     setPaymentStatus('pendiente');
@@ -85,17 +86,17 @@ export function ReservationModal({ open, onClose }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          {/* Court */}
+          {/* Espacio */}
           <div>
             <label className="block text-sm font-medium mb-1.5">Cancha / Espacio</label>
             <select
-              value={courtId}
-              onChange={(e) => setCourtId(e.target.value)}
+              value={espacioId}
+              onChange={(e) => setEspacioId(e.target.value)}
               required
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
               <option value="">Seleccionar...</option>
-              {courts.map((c) => (
+              {espaciosList.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} ({c.status})
                 </option>

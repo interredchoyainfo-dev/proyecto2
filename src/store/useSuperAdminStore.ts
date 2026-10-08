@@ -7,6 +7,7 @@ import type { ModuleId, Negocio, ThemeConfig } from '../types';
 import { useEspaciosStore } from './useEspaciosStore';
 import { useStore } from './useStore';
 import { useMesasStore } from './useMesasStore';
+import { firebaseDeleteTenantData, firebaseResetTenantDataToZero } from '../lib/firebaseSync';
 
 export interface TenantFull extends Negocio {
   plan: 'trial' | 'basic' | 'pro' | 'enterprise';
@@ -312,6 +313,7 @@ export const useSuperAdminStore = create<SuperAdminState>()(
         useEspaciosStore.getState().deleteEspaciosByTenant?.(slug);
         useStore.getState().resetTenantData?.(slug);
         useMesasStore.getState().deleteTenantMesas?.(slug);
+        firebaseDeleteTenantData(slug).catch(() => {});
       },
       resetTenantDataToZero: (id) => {
         const tenant = get().tenants.find((t) => t.id === id || t.slug === id);
@@ -319,6 +321,7 @@ export const useSuperAdminStore = create<SuperAdminState>()(
         const slug = tenant.slug.toLowerCase();
         useStore.getState().resetTenantData?.(slug);
         useMesasStore.getState().resetTenantPedidos?.(slug);
+        firebaseResetTenantDataToZero(slug).catch(() => {});
       },
 
       createTenant: (data) => {

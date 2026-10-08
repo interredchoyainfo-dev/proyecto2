@@ -1,3 +1,5 @@
+import type { StateStorage } from 'zustand/middleware';
+
 /** Persistencia en IndexedDB (más estable que localStorage) */
 const DB_NAME = 'giovanni-db';
 const STORE = 'zustand';
@@ -17,7 +19,7 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export const idbStorage = {
+export const idbStorage: StateStorage = {
   getItem: async (name: string): Promise<string | null> => {
     try {
       const db = await openDB();
