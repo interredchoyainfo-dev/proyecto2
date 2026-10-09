@@ -992,7 +992,7 @@ app.post(['/api/negocios/:negocioId/reservas', '/api/reservas'], (req, res) => {
   res.status(201).json(rowReserva(created));
 });
 
-app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], async (req, res) => {
+app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, res) => {
   const tenantId = resolveTenantId(req);
   const id = req.params.id;
   const cur = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(id, tenantId);
@@ -1051,85 +1051,8 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], async (r
     tenantId
   );
 
-  const updated = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(id, tenantId);
-  let notification = null;
-
-  // Crear un único aviso cuando el estado cambia por primera vez a completada.
-  if (updated.estado === 'completada') {
-    const business = db.prepare('SELECT id, nombre, whatsapp FROM negocios WHERE id = ?').get(tenantId);
-    const space = db.prepare('SELECT name FROM espacios WHERE id = ? AND negocioId = ?').get(updated.espacioId, tenantId);
-    const client = updated.clientId
-      ? db.prepare('SELECT * FROM clientes WHERE id = ? AND negocioId = ?').get(updated.clientId, tenantId)
-      : null;
-    const destination = normalizeWhatsAppRecipient(business?.whatsapp);
-    const message = formatReservationCompletionMessage({ business: business || { id: tenantId }, reservation: updated, space, client });
-    const eventKey = `${tenantId}:${id}:completada`;
-    const existingNotice = db.prepare('SELECT * FROM reserva_notificaciones WHERE eventKey = ?').get(eventKey);
-    if (!existingNotice) {
-      const notificationId = `wa-${crypto.randomUUID()}`;
-      db.prepare(`
-        INSERT INTO reserva_notificaciones
-          (id, negocioId, reservaId, eventKey, destino, mensaje, estado, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        notificationId, tenantId, id, eventKey, destination, message,
-        destination ? 'pendiente' : 'sin_destino', now, now
-      );
-      notification = await dispatchReservationWhatsApp(notificationId);
-    } else {
-      // Un aviso fallido o pendiente de configuración se puede reintentar cuando
-      // se vuelva a guardar la reserva después de configurar WhatsApp.
-      notification = ['enviada', 'sin_destino'].includes(existingNotice.estado)
-        ? existingNotice
-        : await dispatchReservationWhatsApp(existingNotice.id);
-    }
-  }
-
-  res.json({ ...rowReserva(updated), notificacionWhatsApp: notification ? {
-    estado: notification.estado,
-    destino: notification.destino,
-    error: notification.ultimoError || null,
-    enviadoEn: notification.sentAt || null,
-  } : undefined });
-});
-
-app.post(['/api/negocios/:negocioId/reservas/:id/notificacion-whatsapp/reintentar', '/api/reservas/:id/notificacion-whatsapp/reintentar'], async (req, res) => {
-  const tenantId = resolveTenantId(req);
-  const reservation = db.prepare('SELECT id, estado FROM reservas WHERE id = ? AND negocioId = ?').get(req.params.id, tenantId);
-  if (!reservation) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Reserva no encontrada.' });
-  if (reservation.estado !== 'completada') {
-    return res.status(409).json({ success: false, code: 'RESERVA_NO_FINALIZADA', message: 'Solo se puede enviar el aviso de una reserva finalizada.' });
-  }
-  const eventKey = `${tenantId}:${reservation.id}:completada`;
-  let notice = db.prepare('SELECT * FROM reserva_notificaciones WHERE eventKey = ? AND negocioId = ?').get(eventKey, tenantId);
-  if (!notice) {
-    const fullReservation = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(reservation.id, tenantId);
-    const business = db.prepare('SELECT id, nombre, whatsapp FROM negocios WHERE id = ?').get(tenantId);
-    const space = db.prepare('SELECT name FROM espacios WHERE id = ? AND negocioId = ?').get(fullReservation.espacioId, tenantId);
-    const client = fullReservation.clientId
-      ? db.prepare('SELECT * FROM clientes WHERE id = ? AND negocioId = ?').get(fullReservation.clientId, tenantId)
-      : null;
-    const destination = normalizeWhatsAppRecipient(business?.whatsapp);
-    const message = formatReservationCompletionMessage({ business: business || { id: tenantId }, reservation: fullReservation, space, client });
-    const now = new Date().toISOString();
-    const notificationId = `wa-${crypto.randomUUID()}`;
-    db.prepare(`
-      INSERT OR IGNORE INTO reserva_notificaciones
-        (id, negocioId, reservaId, eventKey, destino, mensaje, estado, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(notificationId, tenantId, reservation.id, eventKey, destination, message, destination ? 'pendiente' : 'sin_destino', now, now);
-    notice = db.prepare('SELECT * FROM reserva_notificaciones WHERE eventKey = ? AND negocioId = ?').get(eventKey, tenantId);
-  }
-  const result = await dispatchReservationWhatsApp(notice.id);
-  res.json({
-    success: result.estado === 'enviada',
-    notificacionWhatsApp: {
-      estado: result.estado,
-      destino: result.destino,
-      error: result.ultimoError || null,
-      enviadoEn: result.sentAt || null,
-    },
-  });
+  cons  const updated = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(id, tenantId);
+  res.json(rowReserva(updated));
 });
 
 app.delete(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, res) => {
