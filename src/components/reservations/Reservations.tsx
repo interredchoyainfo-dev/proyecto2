@@ -68,7 +68,7 @@ export function Reservations() {
         reservations: state.reservations.map((r) => r.id === selectedRes.id ? { ...r, ...updated } : r),
       }));
       setSelectedRes((current) => current ? { ...current, ...updated } : current);
-      const notice = updated?.notificacionWhatsApp;
+      const notice = (updated as any)?.notificacionWhatsApp;
       if (notice?.estado === 'enviada') setCompletionNotice('Reserva finalizada. WhatsApp enviado al número configurado para este negocio.');
       else if (notice?.estado === 'pendiente_config') setCompletionNotice('Reserva finalizada. Falta configurar WA_ACCESS_TOKEN y WA_PHONE_NUMBER_ID en el servidor para el envío automático.');
       else if (notice?.estado === 'sin_destino') setCompletionNotice('Reserva finalizada, pero este negocio no tiene un WhatsApp configurado en Configuración.');
