@@ -13,6 +13,14 @@ import {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Comparación de credenciales sin filtrar diferencias por tiempo de ejecución.
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) return false;
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 // CORS seguro
 app.use(
   cors({
@@ -76,11 +84,31 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  // 1. Verificar si es SuperAdmin global
-  if ((userIdentifier === 'admin' || userIdentifier === 'super') && cleanPass === 'Giolezana19') {
+  // SuperAdmin: solo se autentica con credenciales privadas del servidor.
+  // La ruta sin negocio corresponde al propietario; no hay claves maestras en el código.
+  if (!targetTenant) {
+    const ownerEmail = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
+    const ownerPassword = process.env.OWNER_PASSWORD || '';
+
+    if (!ownerEmail || !ownerPassword) {
+      return res.status(503).json({
+        success: false,
+        code: 'OWNER_AUTH_NOT_CONFIGURED',
+        message: 'El acceso SuperAdmin no está configurado en el servidor.',
+      });
+    }
+
+    if (!safeEqual(userIdentifier, ownerEmail) || !safeEqual(cleanPass, ownerPassword)) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Usuario o contraseña incorrectos.',
+      });
+    }
+
     const token = createToken({
       id: 'u-superadmin',
-      email: 'admin',
+      email: ownerEmail,
       nombre: 'Super Administrador',
       rol: 'superadmin',
       negocioId: null,
@@ -90,7 +118,7 @@ app.post('/api/auth/login', (req, res) => {
       token,
       user: {
         id: 'u-superadmin',
-        email: 'admin',
+        email: ownerEmail,
         nombre: 'Super Administrador',
         rol: 'superadmin',
         role: 'superadmin',
@@ -159,6 +187,45 @@ app.post('/api/auth/pin', (req, res) => {
       success: false,
       code: 'MISSING_PIN',
       message: 'PIN requerido.',
+    });
+  }
+
+  // El PIN de propietario solo se acepta en el ámbito explícito SuperAdmin.
+  if (targetTenant === 'superadmin') {
+    const ownerEmail = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
+    const ownerPin = process.env.OWNER_PIN || '';
+    if (!ownerEmail || !ownerPin) {
+      return res.status(503).json({
+        success: false,
+        code: 'OWNER_PIN_NOT_CONFIGURED',
+        message: 'El PIN de SuperAdmin no está configurado en el servidor.',
+      });
+    }
+    if (!safeEqual(cleanPin, ownerPin)) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_PIN',
+        message: 'PIN de acceso incorrecto.',
+      });
+    }
+    const token = createToken({
+      id: 'u-superadmin',
+      email: ownerEmail,
+      nombre: 'Super Administrador',
+      rol: 'superadmin',
+      negocioId: null,
+    });
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: 'u-superadmin',
+        email: ownerEmail,
+        nombre: 'Super Administrador',
+        rol: 'superadmin',
+        role: 'superadmin',
+        negocioId: null,
+      },
     });
   }
 
