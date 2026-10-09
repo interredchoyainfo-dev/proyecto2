@@ -23,6 +23,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem('giovanni-token');
 
     if (stored && token) {
+      if (!API_BASE_URL) {
+        setLoading(false);
+        return;
+      }
       try {
         JSON.parse(stored); // Validate stored data is valid JSON
         // Validar token contra el servidor antes de restaurar
@@ -66,6 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ): Promise<boolean> => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = password.trim();
+    if (!API_BASE_URL) {
+      console.error('[Auth] VITE_API_URL no está configurada para producción.');
+      return false;
+    }
 
     try {
       const res = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -101,6 +109,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tenantSlugOrId?: string
   ): Promise<boolean> => {
     const targetNegocio = tenantSlugOrId?.toLowerCase() || 'superadmin';
+    if (!API_BASE_URL) {
+      console.error('[Auth] VITE_API_URL no está configurada para producción.');
+      return false;
+    }
 
     try {
       const res = await fetch(`${API_BASE_URL}/auth/pin`, {
