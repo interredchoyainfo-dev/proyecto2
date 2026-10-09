@@ -96,6 +96,43 @@ try {
     'tenant details must never expose plaintext administrative passwords'
   );
 
+  const blockedOperationalApi = await fetch(`${baseUrl}/api/negocios/giovanni/sync`, {
+    headers: { 'x-negocio-id': 'giovanni' },
+  });
+  assert.equal(
+    blockedOperationalApi.status,
+    401,
+    'operational tenant APIs must reject requests without a token'
+  );
+
+  const tenantLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin', negocioId: 'giovanni' }),
+  });
+  assert.equal(tenantLoginResponse.status, 200, 'seeded tenant admin must be able to log in');
+  const tenantLogin = await tenantLoginResponse.json();
+
+  const allowedTenantApi = await fetch(`${baseUrl}/api/negocios/giovanni/sync`, {
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'x-negocio-id': 'giovanni',
+    },
+  });
+  assert.equal(allowedTenantApi.status, 200, 'tenant token must access its own operational API');
+
+  const crossTenantApi = await fetch(`${baseUrl}/api/negocios/demo/sync`, {
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'x-negocio-id': 'demo',
+    },
+  });
+  assert.equal(
+    crossTenantApi.status,
+    403,
+    'tenant token must not access another tenant operational API'
+  );
+
   const pinResponse = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -104,7 +141,7 @@ try {
   assert.equal(pinResponse.status, 200, 'configured SuperAdmin PIN must log in');
   assert.equal((await pinResponse.json()).user?.rol, 'superadmin');
 
-  console.log('API smoke tests passed: health, owner authentication, SuperAdmin PIN, and protected tenant management.');
+  console.log('API smoke tests passed: health, authentication, protected tenant management, no password leaks, and tenant isolation.');
 } finally {
   child.kill('SIGTERM');
   await new Promise((resolve) => {
