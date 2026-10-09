@@ -199,6 +199,55 @@ try {
     'a tenant must not overwrite a cash session ID owned by another tenant'
   );
 
+  const tamperOpenCash = await fetch(`${baseUrl}/api/negocios/giovanni/caja/sesion`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({
+      id: 'smoke-shared-session-id',
+      status: 'abierta',
+      openingAmount: 999999,
+      openedBy: 'tampering-test',
+    }),
+  });
+  assert.equal(tamperOpenCash.status, 409, 'an open cash session must not be overwritten through the generic session endpoint');
+
+  const invalidCashClose = await fetch(`${baseUrl}/api/negocios/giovanni/caja/cerrar`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ closingAmount: -1 }),
+  });
+  assert.equal(invalidCashClose.status, 400, 'negative physical cash count must be rejected');
+
+  const invalidCashMethod = await fetch(`${baseUrl}/api/negocios/giovanni/caja/movimientos`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ type: 'ingreso', amount: 100, method: 'inventado', description: 'invalid method test' }),
+  });
+  assert.equal(invalidCashMethod.status, 400, 'unsupported cash movement payment methods must be rejected');
+
+  const duplicateOpenCash = await fetch(`${baseUrl}/api/negocios/giovanni/caja/sesion`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ id: 'smoke-second-session', status: 'abierta', openingAmount: 10 }),
+  });
+  assert.equal(duplicateOpenCash.status, 409, 'a tenant must not have two open cash sessions');
+
   const pinResponse = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
