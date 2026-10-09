@@ -5,6 +5,7 @@ import { API_BASE_URL } from '../lib/api';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  authError: string | null;
   login: (email: string, password: string, tenantSlugOrId?: string) => Promise<boolean>;
   loginWithPin: (pin: string, tenantSlugOrId?: string) => Promise<boolean>;
   logout: () => void;
@@ -13,12 +14,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function responseMessage(data: any, status: number): string {
+  if (data?.code === 'OWNER_AUTH_NOT_CONFIGURED') {
+    return 'El backend está activo, pero falta configurar OWNER_EMAIL y OWNER_PASSWORD en el servidor.';
+  }
+  if (data?.code === 'OWNER_PIN_NOT_CONFIGURED') {
+    return 'El backend está activo, pero falta configurar OWNER_PIN en el servidor.';
+  }
+  if (data?.code === 'INVALID_CREDENTIALS') {
+    return 'Usuario o contraseña incorrectos. Usá las credenciales OWNER configuradas en el backend; las claves demo antiguas ya no son válidas.';
+  }
+  if (data?.code === 'INVALID_PIN') return 'PIN de SuperAdmin incorrecto.';
+  if (data?.message) return data.message;
+  return `El servidor rechazó el acceso (HTTP ${status}).`;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Restaurar sesión desde localStorage y validar token con el servidor
     const stored = localStorage.getItem('giovanni-auth');
     const token = localStorage.getItem('giovanni-token');
 
@@ -28,8 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       try {
-        JSON.parse(stored); // Validate stored data is valid JSON
-        // Validar token contra el servidor antes de restaurar
+        JSON.parse(stored);
         fetch(`${API_BASE_URL}/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         })
@@ -38,14 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             throw new Error('Token inválido');
           })
           .then((data) => {
-            if (data?.user) {
-              setUser(data.user);
-            } else {
-              throw new Error('Sin usuario');
-            }
+            if (data?.user) setUser(data.user);
+            else throw new Error('Sin usuario');
           })
           .catch(() => {
-            // Token expirado o inválido → limpiar sesión
             localStorage.removeItem('giovanni-auth');
             localStorage.removeItem('giovanni-token');
             setUser(null);
@@ -57,21 +68,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     } else {
-      // Sin sesión almacenada
       if (stored) localStorage.removeItem('giovanni-auth');
       setLoading(false);
     }
   }, []);
 
-  const login = async (
-    email: string,
-    password: string,
-    tenantSlugOrId?: string
-  ): Promise<boolean> => {
+  const login = async (email: string, password: string, tenantSlugOrId?: string): Promise<boolean> => {
+    setAuthError(null);
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = password.trim();
     if (!API_BASE_URL) {
-      console.error('[Auth] VITE_API_URL no está configurada para producción.');
+      const message = 'API no configurada: falta VITE_API_URL en el proyecto de Vercel.';
+      setAuthError(message);
+      console.error('[Auth]', message);
       return false;
     }
 
@@ -79,14 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: cleanEmail,
-          password: cleanPass,
-          negocioId: tenantSlugOrId,
-        }),
+        body: JSON.stringify({ email: cleanEmail, password: cleanPass, negocioId: tenantSlugOrId }),
       });
-
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success && data.user) {
         setUser(data.user);
@@ -95,22 +99,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return true;
       }
 
-      // El servidor respondió con un error explícito
-      console.warn('[Auth] Login rechazado por el servidor:', data.message || res.status);
+      const message = responseMessage(data, res.status);
+      setAuthError(message);
+      console.warn('[Auth] Login rechazado:', data.code || res.status, message);
       return false;
     } catch (err) {
+      const message = `No se pudo conectar con la API (${API_BASE_URL}). Verificá que el backend esté publicado y accesible.`;
+      setAuthError(message);
       console.error('[Auth] Error de red al intentar login:', err);
       return false;
     }
   };
 
-  const loginWithPin = async (
-    pin: string,
-    tenantSlugOrId?: string
-  ): Promise<boolean> => {
+  const loginWithPin = async (pin: string, tenantSlugOrId?: string): Promise<boolean> => {
+    setAuthError(null);
     const targetNegocio = tenantSlugOrId?.toLowerCase() || 'superadmin';
     if (!API_BASE_URL) {
-      console.error('[Auth] VITE_API_URL no está configurada para producción.');
+      setAuthError('API no configurada: falta VITE_API_URL en el proyecto de Vercel.');
       return false;
     }
 
@@ -120,8 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin, negocioId: targetNegocio }),
       });
-
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (res.ok && data.success && data.user) {
         setUser(data.user);
@@ -130,9 +134,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return true;
       }
 
-      console.warn('[Auth] PIN rechazado por el servidor:', data.message || res.status);
+      setAuthError(responseMessage(data, res.status));
+      console.warn('[Auth] PIN rechazado:', data.code || res.status);
       return false;
     } catch (err) {
+      setAuthError(`No se pudo conectar con la API (${API_BASE_URL}). Verificá que el backend esté publicado y accesible.`);
       console.error('[Auth] Error de red al intentar login con PIN:', err);
       return false;
     }
@@ -140,17 +146,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = () => {
     setUser(null);
+    setAuthError(null);
     localStorage.removeItem('giovanni-auth');
     localStorage.removeItem('giovanni-token');
   };
 
-  const hasRole = (...roles: UserRole[]) => {
-    if (!user) return false;
-    return roles.includes(user.rol);
-  };
+  const hasRole = (...roles: UserRole[]) => !!user && roles.includes(user.rol);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithPin, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, authError, login, loginWithPin, logout, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

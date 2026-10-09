@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: complejo-giovanni-api
+    runtime: node
+    plan: starter
+    region: ohio
+    buildCommand: npm ci
+    startCommand: npm run server
+    healthCheckPath: /api/health
+    disk:
+      name: complejo-giovanni-sqlite
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_PATH
+        value: /var/data/app.sqlite
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD
+        sync: false
+      - key: OWNER_PIN
+        sync: false
