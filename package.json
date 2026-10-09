@@ -10,7 +10,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "dev:all": "concurrently -n api,web -c blue,green \"node server/index.js\" \"vite\""
+    "dev:all": "concurrently -n api,web -c blue,green \"node server/index.js\" \"vite\"",
+    "test:smoke": "node server/smoke-test.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",

@@ -1,6 +1,7 @@
 import type { Espacio, Reservation, Product, Mesa, Client, Oferta } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3001/api' : '')).replace(/\/+$/, '');
+const API_URL = API_BASE_URL;
 
 let activeTenant: string = 'giovanni';
 
@@ -38,6 +39,9 @@ export function getAuthToken(): string | null {
 }
 
 async function request<T>(path: string, options?: RequestInit, explicitTenant?: string): Promise<T> {
+  if (!API_URL) {
+    throw new Error('API no configurada: definí VITE_API_URL en el entorno de producción apuntando al backend con SQLite.');
+  }
   const currentTenant = explicitTenant || getApiTenant();
   const sep = path.includes('?') ? '&' : '?';
   const urlWithTenant = `${API_URL}${path}${sep}negocioId=${encodeURIComponent(currentTenant)}`;

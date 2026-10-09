@@ -42,10 +42,10 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
 
     setApiTenant(activeNegocio);
 
-    // 1. Iniciar sincronización en tiempo real con la colección del negocio en Firebase
+    // 1. Iniciar sincronización en tiempo real con la colección del negocio en Firebase.
+    // La conexión a Firebase no confirma que la API SQLite esté disponible.
     try {
       initFirestoreRealtimeSync(activeNegocio);
-      setStatus('online');
     } catch (e) {
       console.warn(`Error iniciando Firestore para ${activeNegocio}:`, e);
     }
@@ -60,6 +60,7 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
         const data = await api.sync(activeNegocio);
         if (cancelled) return;
         errorCount = 0;
+        setStatus('online');
 
         const serialized = JSON.stringify(data);
         if (serialized === lastPayload) return;
@@ -117,6 +118,7 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
         }
       } catch {
         errorCount++;
+        if (errorCount >= 3) setStatus('offline');
       }
     };
 
