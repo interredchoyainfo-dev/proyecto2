@@ -1051,7 +1051,7 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, re
     tenantId
   );
 
-  cons  const updated = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(id, tenantId);
+  const updated = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(id, tenantId);
   res.json(rowReserva(updated));
 });
 
