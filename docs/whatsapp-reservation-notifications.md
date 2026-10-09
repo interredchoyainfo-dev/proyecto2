@@ -1,21 +1,18 @@
-# Avisos de reservas finalizadas por WhatsApp
+# Abrir WhatsApp al finalizar una reserva
 
-La API crea un aviso aislado por negocio cuando una reserva cambia a `completada`. El destino se toma del campo WhatsApp guardado en la configuración de ese negocio. El aviso contiene los datos de la reserva y los datos de cliente disponibles en la base de datos.
+Al marcar una reserva como finalizada, la aplicación abre WhatsApp con un mensaje preparado para el número guardado en **Configuración → WhatsApp de Reservas / Contacto** del negocio correspondiente.
 
-## Variables de entorno del backend
+El mensaje incluye:
+- Nombre del negocio.
+- Código, estado, espacio, fecha y horario de la reserva.
+- Cantidad de personas, importe total, seña/pago, saldo, estado y medio de pago.
+- Nombre, teléfono y correo del cliente cuando estén disponibles.
+- Observaciones de la reserva.
 
-Configurar en el servicio de backend (por ejemplo, Render → servicio → Environment), nunca en variables `VITE_*` ni en el código:
+## Envío manual
 
-- `WA_ACCESS_TOKEN`: token de acceso de WhatsApp Cloud API.
-- `WA_PHONE_NUMBER_ID`: ID del número emisor registrado en Meta WhatsApp Cloud API. No es el número de destino del negocio.
-- `WA_GRAPH_API_VERSION`: versión Graph API; opcional, por defecto `v22.0`.
-- `WA_TEMPLATE_NAME`: opcional, nombre de una plantilla de WhatsApp aprobada. Para avisos proactivos fuera de la ventana de atención, se recomienda configurar una plantilla aprobada cuyo cuerpo tenga un único marcador `{{1}}`; ese marcador recibirá el resumen completo de la reserva (hasta 1024 caracteres).
-- `WA_TEMPLATE_LANGUAGE`: opcional, idioma de la plantilla, por defecto `es_AR`.
+La aplicación **no envía mensajes automáticamente** ni requiere WhatsApp Cloud API o variables de entorno. La persona revisa el texto y toca **Enviar** en WhatsApp. Si el navegador bloquea la ventana emergente, la pantalla muestra un enlace alternativo para abrir el mensaje.
 
-Sin token e ID de emisor, la reserva igualmente se finaliza, pero el aviso queda con estado `pendiente_config`; la interfaz lo informa. Si no hay un número de WhatsApp guardado en la configuración del negocio, el aviso queda `sin_destino`. Los errores de proveedor quedan registrados para permitir un reintento.
+## Número por negocio
 
-## Destino y privacidad
-
-Cada aviso usa exclusivamente el número `whatsapp` del negocio dueño de la reserva. Los eventos tienen una clave única por negocio, reserva y finalización para evitar envíos duplicados. No guardar tokens en el repositorio, en la configuración pública del negocio ni en el frontend.
-
-El envío por texto libre puede ser rechazado por Meta si no existe una ventana de atención abierta con el destinatario; para mensajes automáticos proactivos usar una plantilla aprobada y configurar `WA_TEMPLATE_NAME`.
+Cada negocio utiliza exclusivamente el número guardado en su propia configuración. El número debe incluir el código de área; para números argentinos, se normaliza el prefijo internacional al construir el enlace de WhatsApp.
