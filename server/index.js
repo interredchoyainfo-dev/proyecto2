@@ -815,6 +815,14 @@ async function dispatchReservationWhatsApp(notificationId) {
   const item = db.prepare('SELECT * FROM reserva_notificaciones WHERE id = ?').get(notificationId);
   if (!item || item.estado === 'enviada') return item;
 
+  if (!item.destino) {
+    db.prepare(`
+      UPDATE reserva_notificaciones SET estado = 'sin_destino',
+        ultimoError = ?, updatedAt = ? WHERE id = ?
+    `).run('El negocio no tiene un número de WhatsApp configurado.', new Date().toISOString(), notificationId);
+    return db.prepare('SELECT * FROM reserva_notificaciones WHERE id = ?').get(notificationId);
+  }
+
   const token = process.env.WA_ACCESS_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_NUMBER_ID;
   if (!token || !phoneNumberId) {
@@ -822,14 +830,6 @@ async function dispatchReservationWhatsApp(notificationId) {
       UPDATE reserva_notificaciones SET estado = 'pendiente_config',
         ultimoError = ?, updatedAt = ? WHERE id = ?
     `).run('Falta configurar WA_ACCESS_TOKEN y WA_PHONE_NUMBER_ID en el servidor.', new Date().toISOString(), notificationId);
-    return db.prepare('SELECT * FROM reserva_notificaciones WHERE id = ?').get(notificationId);
-  }
-
-  if (!item.destino) {
-    db.prepare(`
-      UPDATE reserva_notificaciones SET estado = 'sin_destino',
-        ultimoError = ?, updatedAt = ? WHERE id = ?
-    `).run('El negocio no tiene un número de WhatsApp configurado.', new Date().toISOString(), notificationId);
     return db.prepare('SELECT * FROM reserva_notificaciones WHERE id = ?').get(notificationId);
   }
 
