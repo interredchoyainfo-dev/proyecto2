@@ -10,6 +10,7 @@ import {
   createToken,
   verifyToken,
   authenticate,
+  authorizeTenant,
 } from './auth.js';
 
 const app = express();
@@ -508,6 +509,44 @@ app.post('/api/tenants/:id/init', (req, res) => {
     tenantId: cur?.id || target,
     message: `Tenant "${cur?.nombre || target}" inicializado correctamente.`,
   });
+});
+
+// Todas las API operativas requieren sesión y autorización del negocio.
+// Se excluyen autenticación, administración de tenants (ya protegida arriba) y health check.
+app.use('/api', authenticate, (req, res, next) => {
+  if (
+    req.path.startsWith('/auth/') ||
+    req.path === '/tenants' ||
+    req.path.startsWith('/tenants/') ||
+    req.path === '/health'
+  ) {
+    return next();
+  }
+
+  const requestedTenant = resolveTenantId(req);
+  const tenant = db.prepare(
+    'SELECT id FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1'
+  ).get(requestedTenant, requestedTenant);
+
+  if (!tenant) {
+    return res.status(404).json({
+      success: false,
+      code: 'TENANT_NOT_FOUND',
+      message: 'El negocio solicitado no existe.',
+    });
+  }
+
+  try {
+    authorizeTenant(req, tenant.id);
+    req.tenantId = tenant.id;
+    next();
+  } catch (error) {
+    return res.status(error.status || 403).json({
+      success: false,
+      code: error.code || 'TENANT_FORBIDDEN',
+      message: error.message || 'No tenés permiso para operar sobre este negocio.',
+    });
+  }
 });
 
 // ==========================================
