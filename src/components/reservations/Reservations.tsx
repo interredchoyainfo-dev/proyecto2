@@ -68,7 +68,7 @@ export function Reservations() {
     setCompletionError('');
     setCompletionWhatsAppUrl('');
 
-    const rawPhone = String((business as any)?.whatsapp || '').replace(/\\D/g, '');
+    const rawPhone = String((business as any)?.whatsapp || '').replace(/\D/g, '');
     const localPhone = rawPhone.replace(/^0/, '');
     const whatsappNumber = localPhone.startsWith('54')
       ? localPhone
@@ -119,7 +119,7 @@ export function Reservations() {
         `Teléfono: ${selectedRes.clientPhone || 'No informado'}`,
         `Email: ${(selectedRes as any).clientEmail || 'No informado'}`,
         `Observaciones: ${selectedRes.notes || 'Sin observaciones'}`,
-      ].join('\\n');
+      ].join('\n');
       const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
       setCompletionWhatsAppUrl(url);
       if (whatsappWindow) {
