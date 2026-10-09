@@ -138,6 +138,24 @@ export const api = {
     return request<{ success: boolean }>(`${tenantPath(t)}/reservas/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
   },
 
+
+
+  // Turnos fijos recurrentes
+  getTurnosFijos: (negocioId?: string) =>
+    request<any[]>(`${tenantPath(negocioId)}/turnos-fijos`, undefined, negocioId),
+  createTurnoFijo: (data: any, negocioId?: string) => {
+    const t = negocioId || getApiTenant();
+    return request<any>(`${tenantPath(t)}/turnos-fijos`, { method: 'POST', body: JSON.stringify(data) }, t);
+  },
+  updateTurnoFijo: (id: string, data: any, negocioId?: string) => {
+    const t = negocioId || getApiTenant();
+    return request<any>(`${tenantPath(t)}/turnos-fijos/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+  },
+  deleteTurnoFijo: (id: string, negocioId?: string) => {
+    const t = negocioId || getApiTenant();
+    return request<{ success: boolean }>(`${tenantPath(t)}/turnos-fijos/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
+  },
+
   // Productos
   getProductos: (negocioId?: string) =>
     request<Product[]>(`${tenantPath(negocioId)}/productos`, undefined, negocioId),

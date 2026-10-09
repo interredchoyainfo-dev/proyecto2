@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { api } from '../../lib/api';
 import { useStore } from '../../store/useStore';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { Icon } from '../ui/Icon';
@@ -28,12 +29,30 @@ export function ReservationModal({ open, onClose }: Props) {
   const [amount, setAmount] = useState(15000);
   const [paidAmount, setPaidAmount] = useState(0);
   const [notes, setNotes] = useState('');
+  const [turnosFijos, setTurnosFijos] = useState<any[]>([]);
+  const reservations = useStore((s) => s.reservations);
+
+  useEffect(() => {
+    if (!open) return;
+    api.getTurnosFijos().then(setTurnosFijos).catch(() => setTurnosFijos([]));
+  }, [open]);
+
+  const weekday = new Date(date + 'T12:00:00').getDay();
+  const fixedConflict = turnosFijos.find((t) =>
+    Boolean(t.activo) && t.espacioId === espacioId && t.dayOfWeek === weekday &&
+    date >= t.startDate && date <= t.endDate && startTime < t.endTime && endTime > t.startTime
+  );
+  const reservationConflict = reservations.find((r) =>
+    r.estado !== 'cancelada' && r.espacioId === espacioId && r.date === date &&
+    startTime < r.endTime && endTime > r.startTime
+  );
+  const scheduleConflict = fixedConflict || reservationConflict;
 
   if (!open) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!espacioId || !clientName || !clientPhone) return;
+    if (!espacioId || !clientName || !clientPhone || startTime >= endTime || scheduleConflict) return;
 
     let clientId = clients.find(
       (c) => c.phone === clientPhone || c.name.toLowerCase() === clientName.toLowerCase()
@@ -228,6 +247,16 @@ export function ReservationModal({ open, onClose }: Props) {
             />
           </div>
 
+          {scheduleConflict && (
+            <p role="alert" className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-600 dark:text-red-400">
+              {fixedConflict
+                ? `Horario ocupado por el turno fijo de ${fixedConflict.clientName} (${fixedConflict.startTime}–${fixedConflict.endTime}).`
+                : `Horario ocupado por ${reservationConflict?.clientName || 'otra reserva'} (${reservationConflict?.startTime}–${reservationConflict?.endTime}).`}
+            </p>
+          )}
+          {startTime >= endTime && (
+            <p role="alert" className="text-sm text-red-600">La hora de finalización debe ser posterior al inicio.</p>
+          )}
           <div className="flex gap-3 pt-2">
             <button
               type="button"
@@ -238,7 +267,8 @@ export function ReservationModal({ open, onClose }: Props) {
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors"
+              disabled={Boolean(scheduleConflict) || startTime >= endTime}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Crear Reserva
             </button>

@@ -26,6 +26,8 @@ const child = spawn(process.execPath, ['server/index.js'], {
     OWNER_EMAIL: 'owner@example.test',
     OWNER_PASSWORD: 'smoke-test-password',
     OWNER_PIN: '246810',
+    WA_ACCESS_TOKEN: '',
+    WA_PHONE_NUMBER_ID: '',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -80,6 +82,173 @@ try {
   assert.equal(tenantsResponse.status, 200, 'SuperAdmin token must access tenant management');
   const tenants = await tenantsResponse.json();
   assert.ok(Array.isArray(tenants.tenants), 'tenant list must be an array');
+  assert.ok(
+    tenants.tenants.every((tenant) => !Object.hasOwn(tenant, 'adminPassword')),
+    'tenant list must never expose plaintext administrative passwords'
+  );
+
+  const tenantDetailResponse = await fetch(`${baseUrl}/api/tenants/giovanni`, {
+    headers: { authorization: `Bearer ${login.token}` },
+  });
+  assert.equal(tenantDetailResponse.status, 200, 'SuperAdmin must access tenant details');
+  const tenantDetail = await tenantDetailResponse.json();
+  assert.equal(
+    Object.hasOwn(tenantDetail, 'adminPassword'),
+    false,
+    'tenant details must never expose plaintext administrative passwords'
+  );
+
+  const blockedOperationalApi = await fetch(`${baseUrl}/api/negocios/giovanni/sync`, {
+    headers: { 'x-negocio-id': 'giovanni' },
+  });
+  assert.equal(
+    blockedOperationalApi.status,
+    401,
+    'operational tenant APIs must reject requests without a token'
+  );
+
+  const tenantLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin', negocioId: 'giovanni' }),
+  });
+  assert.equal(tenantLoginResponse.status, 200, 'seeded tenant admin must be able to log in');
+  const tenantLogin = await tenantLoginResponse.json();
+
+  const allowedTenantApi = await fetch(`${baseUrl}/api/negocios/giovanni/sync`, {
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'x-negocio-id': 'giovanni',
+    },
+  });
+  assert.equal(allowedTenantApi.status, 200, 'tenant token must access its own operational API');
+
+  const crossTenantApi = await fetch(`${baseUrl}/api/negocios/demo/sync`, {
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'x-negocio-id': 'demo',
+    },
+  });
+  assert.equal(
+    crossTenantApi.status,
+    403,
+    'tenant token must not access another tenant operational API'
+  );
+
+  // No debe poder falsearse el negocio de la URL enviando una cabecera de otro tenant.
+  const spoofedTenantHeader = await fetch(`${baseUrl}/api/negocios/demo/sync`, {
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'x-negocio-id': 'giovanni',
+    },
+  });
+  assert.equal(
+    spoofedTenantHeader.status,
+    403,
+    'tenant authorization must follow the URL tenant even when x-negocio-id is spoofed'
+  );
+
+  const missingTenantSelector = await fetch(`${baseUrl}/api/sync`, {
+    headers: { authorization: `Bearer ${tenantLogin.token}` },
+  });
+  assert.equal(
+    missingTenantSelector.status,
+    400,
+    'legacy operational aliases must reject requests without an explicit tenant selector'
+  );
+
+  const createCashSession = await fetch(`${baseUrl}/api/negocios/giovanni/caja/sesion`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({
+      id: 'smoke-shared-session-id',
+      status: 'abierta',
+      openingAmount: 100,
+      openedBy: 'smoke-test',
+    }),
+  });
+  assert.equal(createCashSession.status, 200, 'tenant must create/update its own cash session');
+
+  const demoLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin', negocioId: 'demo' }),
+  });
+  assert.equal(demoLoginResponse.status, 200, 'demo tenant admin must be able to log in');
+  const demoLogin = await demoLoginResponse.json();
+
+  const crossTenantCashWrite = await fetch(`${baseUrl}/api/negocios/demo/caja/sesion`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${demoLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'demo',
+    },
+    body: JSON.stringify({
+      id: 'smoke-shared-session-id',
+      status: 'cerrada',
+      openingAmount: 999999,
+      openedBy: 'malicious-test',
+    }),
+  });
+  assert.equal(
+    crossTenantCashWrite.status,
+    409,
+    'a tenant must not overwrite a cash session ID owned by another tenant'
+  );
+
+  const tamperOpenCash = await fetch(`${baseUrl}/api/negocios/giovanni/caja/sesion`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({
+      id: 'smoke-shared-session-id',
+      status: 'abierta',
+      openingAmount: 999999,
+      openedBy: 'tampering-test',
+    }),
+  });
+  assert.equal(tamperOpenCash.status, 409, 'an open cash session must not be overwritten through the generic session endpoint');
+
+  const invalidCashClose = await fetch(`${baseUrl}/api/negocios/giovanni/caja/cerrar`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ closingAmount: -1 }),
+  });
+  assert.equal(invalidCashClose.status, 400, 'negative physical cash count must be rejected');
+
+  const invalidCashMethod = await fetch(`${baseUrl}/api/negocios/giovanni/caja/movimientos`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ type: 'ingreso', amount: 100, method: 'inventado', description: 'invalid method test' }),
+  });
+  assert.equal(invalidCashMethod.status, 400, 'unsupported cash movement payment methods must be rejected');
+
+  const duplicateOpenCash = await fetch(`${baseUrl}/api/negocios/giovanni/caja/sesion`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ id: 'smoke-second-session', status: 'abierta', openingAmount: 10 }),
+  });
+  assert.equal(duplicateOpenCash.status, 409, 'a tenant must not have two open cash sessions');
 
   const pinResponse = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
@@ -89,7 +258,117 @@ try {
   assert.equal(pinResponse.status, 200, 'configured SuperAdmin PIN must log in');
   assert.equal((await pinResponse.json()).user?.rol, 'superadmin');
 
-  console.log('API smoke tests passed: health, owner authentication, SuperAdmin PIN, and protected tenant management.');
+  // Turnos fijos: validar fechas reales, crear una recurrencia y rechazar solapamientos.
+  const spaceResponse = await fetch(`${baseUrl}/api/negocios/giovanni/espacios`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({
+      name: 'Smoke fixed-turn space',
+      type: 'futbol',
+      precioHora: 10000,
+      precioDia: 10000,
+      isActive: true,
+    }),
+  });
+  assert.equal(spaceResponse.status, 201, 'tenant must create a space for fixed-turn tests');
+  const smokeSpace = await spaceResponse.json();
+
+  const now = new Date();
+  const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const end = new Date(now);
+  end.setDate(end.getDate() + 28);
+  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+  const dayOfWeek = now.getDay();
+  const fixedTurnPayload = {
+    espacioId: smokeSpace.id,
+    clientName: 'Smoke fixed client',
+    dayOfWeek,
+    startDate,
+    endDate,
+    startTime: '10:00',
+    endTime: '11:00',
+    amount: 12000,
+    notes: 'CI test',
+  };
+  const invalidFixedTurn = await fetch(`${baseUrl}/api/negocios/giovanni/turnos-fijos`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ ...fixedTurnPayload, startDate: '2026-02-30' }),
+  });
+  assert.equal(invalidFixedTurn.status, 400, 'impossible calendar dates must be rejected');
+
+  const fixedTurnResponse = await fetch(`${baseUrl}/api/negocios/giovanni/turnos-fijos`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify(fixedTurnPayload),
+  });
+  assert.equal(fixedTurnResponse.status, 201, 'valid recurring fixed turn must be created');
+
+  const overlappingFixedTurn = await fetch(`${baseUrl}/api/negocios/giovanni/turnos-fijos`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ ...fixedTurnPayload, clientName: 'Smoke overlapping client' }),
+  });
+  assert.equal(overlappingFixedTurn.status, 409, 'overlapping recurring fixed turns must be rejected');
+
+  // Finalizar una reserva solo actualiza su estado; WhatsApp se abre desde el navegador y requiere envío manual.
+  const reservationResponse = await fetch(`${baseUrl}/api/negocios/giovanni/reservas`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({
+      espacioId: smokeSpace.id,
+      clientName: 'Smoke WhatsApp Client',
+      clientPhone: '3855111222',
+      date: '2099-01-02',
+      startTime: '03:15',
+      endTime: '03:45',
+      amount: 12000,
+      paidAmount: 2000,
+      paymentStatus: 'senado',
+      paymentMethod: 'efectivo',
+      personas: 4,
+      notes: 'Datos de prueba para notificación',
+    }),
+  });
+  assert.equal(reservationResponse.status, 201, 'test reservation must be created');
+  const smokeReservation = await reservationResponse.json();
+
+  const completeReservationResponse = await fetch(`${baseUrl}/api/negocios/giovanni/reservas/${encodeURIComponent(smokeReservation.id)}`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ estado: 'completada' }),
+  });
+  assert.equal(completeReservationResponse.status, 200, 'reservation must be completed');
+  const completedReservation = await completeReservationResponse.json();
+  assert.equal(completedReservation.estado, 'completada');
+  assert.equal(completedReservation.notificacionWhatsApp, undefined, 'completing a reservation must not send or queue an automatic WhatsApp message');
+
+
+  console.log('API smoke tests passed: auth, tenant isolation, password leak protection, cash session persistence, fixed-turn validation/conflicts, and manual reservation completion without automatic WhatsApp sending.');
 } finally {
   child.kill('SIGTERM');
   await new Promise((resolve) => {

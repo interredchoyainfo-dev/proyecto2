@@ -1,0 +1,3 @@
+ALTER TABLE caja_sesiones ADD COLUMN totalVentas REAL NOT NULL DEFAULT 0;
+ALTER TABLE caja_sesiones ADD COLUMN totalIngresos REAL NOT NULL DEFAULT 0;
+ALTER TABLE caja_sesiones ADD COLUMN totalEgresos REAL NOT NULL DEFAULT 0;

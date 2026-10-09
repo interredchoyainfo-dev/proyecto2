@@ -73,25 +73,28 @@ export const useEspaciosStore = create<EspaciosState>()(
           isActive: true,
         };
 
-        // Actualización optimista local
-        set((s) => ({
-          espacios: [...s.espacios, full],
-        }));
-
-        // Persistencia en backend real
+        // El servidor es la fuente de verdad: no conservar espacios fantasma si rechaza el alta.
         try {
           const created = await api.createEspacio(targetNegocio, full);
-          if (created && created.id) {
-            set((s) => ({
-              espacios: s.espacios.map((e) => (e.id === full.id ? created : e)),
-            }));
-            return created;
+          if (!created || !created.id) {
+            throw new Error("El servidor no confirmó la creación del espacio.");
           }
+          set((s) => {
+            const tenant = (targetNegocio || "giovanni").toLowerCase().trim();
+            const other = s.espacios.filter((e) => {
+              const sameTenant = (e.negocioId || "giovanni").toLowerCase().trim() === tenant;
+              return !sameTenant || (e.id !== full.id && e.id !== created.id);
+            });
+            return { espacios: [...other, created] };
+          });
+          return created;
         } catch (err) {
+          set((s) => ({
+            espacios: s.espacios.filter((e) => e.id !== full.id),
+          }));
           console.warn(`[useEspaciosStore] Error persistiendo espacio en backend:`, err);
+          throw err;
         }
-
-        return full;
       },
 
       updateEspacio: async (id, data) => {

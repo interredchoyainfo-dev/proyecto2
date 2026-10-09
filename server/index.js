@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import db from './db.js';
 import {
@@ -9,6 +10,7 @@ import {
   createToken,
   verifyToken,
   authenticate,
+  authorizeTenant,
 } from './auth.js';
 
 const app = express();
@@ -22,26 +24,38 @@ function safeEqual(a, b) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-// CORS seguro
+// CORS con lista explícita de orígenes. En producción, definir CORS_ORIGINS
+// con el dominio exacto del frontend (separado por comas).
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000,http://localhost:3001')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Las llamadas sin Origin (p. ej. health checks internos o clientes nativos)
+      // no dependen de CORS; los navegadores solo reciben permiso para la lista explícita.
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      return callback(null, false);
+    },
     credentials: true,
   })
 );
 app.use(express.json({ limit: '5mb' }));
 
-// Helper para extraer el tenant actual de la petición
+// Helper para extraer el tenant. La ruta canónica tiene prioridad sobre
+// cabeceras/parámetros del cliente, que nunca pueden cambiar el negocio de la URL.
 export function resolveTenantId(req) {
-  let tenantId =
-    req.params.negocioId ||
+  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
+  const pathMatch = originalPath.match(/^\/api\/negocios\/([^/]+)/i);
+  const tenantId =
+    req.authorizedTenantId ||
+    req.params?.negocioId ||
+    pathMatch?.[1] ||
     req.headers['x-negocio-id'] ||
-    req.query.negocioId;
-
-  if (!tenantId && req.path.startsWith('/api/negocios/')) {
-    const parts = req.path.split('/');
-    if (parts[3]) tenantId = parts[3];
-  }
+    req.query?.negocioId;
 
   const clean = String(tenantId || 'giovanni').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '');
   return clean || 'giovanni';
@@ -70,8 +84,24 @@ app.use(optionalAuth);
 // 1. AUTENTICACIÓN REAL (/api/auth)
 // ==========================================
 
+// Limitar intentos de autenticación para reducir ataques de fuerza bruta.
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { success: false, code: 'TOO_MANY_ATTEMPTS', message: 'Demasiados intentos. Esperá 15 minutos y volvé a intentar.' },
+});
+const pinRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { success: false, code: 'TOO_MANY_PIN_ATTEMPTS', message: 'Demasiados intentos de PIN. Esperá 15 minutos y volvé a intentar.' },
+});
+
 // Login con Usuario y Contraseña
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', loginRateLimit, (req, res) => {
   const { email, username, password, negocioId } = req.body;
   const userIdentifier = (email || username || '').trim().toLowerCase();
   const cleanPass = (password || '').trim();
@@ -178,7 +208,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 // Login con PIN (para Mozos, Cocina, etc.)
-app.post('/api/auth/pin', (req, res) => {
+app.post('/api/auth/pin', pinRateLimit, (req, res) => {
   const { pin, negocioId } = req.body;
   const cleanPin = (pin || '').trim();
   const targetTenant = (negocioId || req.tenantId || 'giovanni').trim().toLowerCase();
@@ -299,7 +329,6 @@ app.get('/api/tenants', (req, res) => {
     plan: r.plan || 'trial',
     isActive: !!r.isActive,
     adminUser: r.adminUser || 'admin',
-    adminPassword: r.adminPassword || 'admin',
     theme: r.themeJson ? JSON.parse(r.themeJson) : undefined,
     modulos: r.modulosJson ? JSON.parse(r.modulosJson) : {},
     createdAt: r.createdAt,
@@ -325,7 +354,6 @@ app.get('/api/tenants/:id', (req, res) => {
     plan: r.plan || 'trial',
     isActive: !!r.isActive,
     adminUser: r.adminUser || 'admin',
-    adminPassword: r.adminPassword || 'admin',
     theme: r.themeJson ? JSON.parse(r.themeJson) : undefined,
     modulos: r.modulosJson ? JSON.parse(r.modulosJson) : {},
     createdAt: r.createdAt,
@@ -377,13 +405,24 @@ app.post('/api/tenants', (req, res) => {
 
   tx();
   const created = db.prepare('SELECT * FROM negocios WHERE id = ?').get(id);
+  // Nunca devolver columnas internas que puedan contener credenciales.
   res.status(201).json({
     success: true,
     tenant: {
-      ...created,
+      id: created.id,
+      slug: created.slug,
+      nombre: created.nombre,
+      logoUrl: created.logoUrl,
+      subtitulo: created.subtitulo,
+      descripcion: created.descripcion,
+      whatsapp: created.whatsapp,
+      plan: created.plan,
       isActive: !!created.isActive,
+      adminUser: created.adminUser,
       theme: created.themeJson ? JSON.parse(created.themeJson) : undefined,
       modulos: created.modulosJson ? JSON.parse(created.modulosJson) : {},
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
     },
     message: `Negocio "${b.nombre}" creado exitosamente.`,
   });
@@ -484,6 +523,64 @@ app.post('/api/tenants/:id/init', (req, res) => {
   });
 });
 
+// Todas las API operativas requieren sesión y autorización del negocio.
+// Se excluyen autenticación, administración de tenants (ya protegida arriba) y health check.
+app.use('/api', (req, res, next) => {
+  // Comprobar las rutas públicas antes de autenticar. Express puede exponer
+  // req.path relativo al mount; originalUrl conserva la ruta completa.
+  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
+  if (
+    originalPath.startsWith('/api/auth/') ||
+    originalPath === '/api/tenants' ||
+    originalPath.startsWith('/api/tenants/') ||
+    originalPath === '/api/health'
+  ) {
+    return next();
+  }
+
+  authenticate(req, res, () => {
+    // Para rutas con negocio en la URL, ese identificador es la fuente de verdad.
+    // Para alias antiguos (/api/productos, etc.) exigimos selector explícito.
+    const pathMatch = originalPath.match(/^\/api\/negocios\/([^/]+)/i);
+    const suppliedTenant = pathMatch?.[1] || req.headers['x-negocio-id'] || req.query.negocioId;
+    if (!suppliedTenant || !String(suppliedTenant).trim()) {
+      return res.status(400).json({
+        success: false,
+        code: 'TENANT_REQUIRED',
+        message: 'Debés indicar el negocio para esta operación.',
+      });
+    }
+
+    const requestedTenant = resolveTenantId(req);
+    const tenant = db.prepare(
+      'SELECT id FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1'
+    ).get(requestedTenant, requestedTenant);
+
+    if (!tenant) {
+      return res.status(404).json({
+        success: false,
+        code: 'TENANT_NOT_FOUND',
+        message: 'El negocio solicitado no existe.',
+      });
+    }
+
+    try {
+      authorizeTenant(req, tenant.id);
+      // Desde aquí en adelante, todas las consultas deben usar el ID canónico
+      // del negocio, aunque la URL haya usado su slug.
+      req.authorizedTenantId = tenant.id;
+      req.tenantId = tenant.id;
+      next();
+    } catch (error) {
+      return res.status(error.status || 403).json({
+        success: false,
+        code: error.code || 'TENANT_FORBIDDEN',
+        message: error.message || 'No tenés permiso para operar sobre este negocio.',
+      });
+    }
+  });
+});
+
 // ==========================================
 // 3. ESPACIOS CRUD (/api/negocios/:negocioId/espacios)
 // ==========================================
@@ -520,7 +617,17 @@ app.post(['/api/negocios/:negocioId/espacios', '/api/espacios'], (req, res) => {
   const e = req.body;
   const id = e.id || `esp-${tenantId}-${crypto.randomUUID().slice(0, 8)}`;
   const now = new Date().toISOString();
-  const precioDia = Number(e.precioDia ?? e.precioHora ?? 12000);
+  const nombreEspacio = String(e.name || '').trim();
+  if (!nombreEspacio) return res.status(400).json({ success: false, code: 'ESPACIO_NAME_REQUIRED', message: 'El nombre del espacio es obligatorio.' });
+  const existenteId = db.prepare('SELECT * FROM espacios WHERE id = ?').get(id);
+  if (existenteId) {
+    if (String(existenteId.negocioId).toLowerCase() !== String(tenantId).toLowerCase()) return res.status(409).json({ success: false, code: 'ESPACIO_ID_TENANT_CONFLICT', message: 'El identificador pertenece a otro negocio.' });
+    return res.status(200).json(rowEspacio(existenteId));
+  }
+  const duplicado = db.prepare('SELECT * FROM espacios WHERE negocioId = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(type)) = LOWER(TRIM(?)) LIMIT 1').get(tenantId, nombreEspacio, e.type || 'futbol');
+  if (duplicado) return res.status(409).json({ success: false, code: 'ESPACIO_DUPLICATE', message: 'Ya existe un espacio con ese nombre y tipo en este negocio.', espacio: rowEspacio(duplicado) });
+  const precioHora = Number(e.precioHora ?? e.precioDia ?? 12000);
+  const precioDia = Number(e.precioDia ?? precioHora);
   const precioNoche = Number(e.precioNoche ?? Math.round(precioDia * 1.25));
 
   db.prepare(`
@@ -532,10 +639,10 @@ app.post(['/api/negocios/:negocioId/espacios', '/api/espacios'], (req, res) => {
   `).run(
     id,
     tenantId,
-    e.name || 'Espacio Nuevo',
+    nombreEspacio,
     e.type || 'futbol',
     e.status || 'libre',
-    precioDia,
+    precioHora,
     precioDia,
     precioNoche,
     e.description || '',
@@ -560,8 +667,19 @@ app.put(['/api/negocios/:negocioId/espacios/:id', '/api/espacios/:id'], (req, re
 
   const e = req.body;
   const now = new Date().toISOString();
+  const precioHora = e.precioHora !== undefined ? Number(e.precioHora) : cur.precioHora;
   const precioDia = e.precioDia !== undefined ? Number(e.precioDia) : cur.precioDia;
   const precioNoche = e.precioNoche !== undefined ? Number(e.precioNoche) : cur.precioNoche;
+
+  if (![precioHora, precioDia, precioNoche].every((precio) => Number.isFinite(precio) && precio >= 0)) {
+    return res.status(400).json({ success: false, code: 'ESPACIO_INVALID_PRICE', message: 'Los precios deben ser números válidos no negativos.' });
+  }
+
+  const nuevoNombre = String(e.name ?? cur.name).trim();
+  if (!nuevoNombre) return res.status(400).json({ success: false, code: 'ESPACIO_NAME_REQUIRED', message: 'El nombre del espacio es obligatorio.' });
+  const nuevoTipo = String(e.type ?? cur.type).trim() || cur.type;
+  const duplicado = db.prepare('SELECT id FROM espacios WHERE negocioId = ? AND id != ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(type)) = LOWER(TRIM(?)) LIMIT 1').get(tenantId, id, nuevoNombre, nuevoTipo);
+  if (duplicado) return res.status(409).json({ success: false, code: 'ESPACIO_DUPLICATE', message: 'Ya existe un espacio con ese nombre y tipo en este negocio.' });
 
   db.prepare(`
     UPDATE espacios SET
@@ -570,10 +688,10 @@ app.put(['/api/negocios/:negocioId/espacios/:id', '/api/espacios/:id'], (req, re
       isActive = ?, currentReservationId = ?, updatedAt = ?
     WHERE id = ? AND negocioId = ?
   `).run(
-    e.name ?? cur.name,
-    e.type ?? cur.type,
+    nuevoNombre,
+    nuevoTipo,
     e.status ?? cur.status,
-    precioDia,
+    precioHora,
     precioDia,
     precioNoche,
     e.description !== undefined ? e.description : cur.description,
@@ -598,6 +716,36 @@ app.delete(['/api/negocios/:negocioId/espacios/:id', '/api/espacios/:id'], (req,
   db.prepare('DELETE FROM espacios WHERE id = ? AND negocioId = ?').run(id, tenantId);
   res.json({ success: true, message: 'Espacio eliminado.' });
 });
+
+function isValidIsoDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function isValidTimeRange(startTime, endTime) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) &&
+    /^([01]\d|2[0-3]):[0-5]\d$/.test(endTime) &&
+    startTime < endTime;
+}
+
+function isReasonableDateRange(startDate, endDate) {
+  if (!isValidIsoDate(startDate) || !isValidIsoDate(endDate) || startDate > endDate) return false;
+  const days = (Date.parse(`${endDate}T12:00:00Z`) - Date.parse(`${startDate}T12:00:00Z`)) / 86400000;
+  return days <= 366 * 2;
+}
+
+function findFixedTurnConflict(tenantId, espacioId, date, startTime, endTime, excludeId = null) {
+  return db.prepare(`
+    SELECT id, clientName, startTime, endTime FROM turnos_fijos
+    WHERE negocioId = ? AND espacioId = ? AND activo = 1
+      AND dayOfWeek = CAST(strftime('%w', ?) AS INTEGER)
+      AND startDate <= ? AND endDate >= ?
+      AND startTime < ? AND endTime > ?
+      AND (? IS NULL OR id <> ?)
+    LIMIT 1
+  `).get(tenantId, espacioId, date, date, date, endTime, startTime, excludeId, excludeId);
+}
 
 // ==========================================
 // 4. RESERVAS CON VALIDACIÓN DE SOLAPAMIENTO
@@ -630,6 +778,7 @@ const rowReserva = (r) =>
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };
+
 
 app.get(['/api/negocios/:negocioId/reservas', '/api/reservas'], (req, res) => {
   const tenantId = resolveTenantId(req);
@@ -677,6 +826,15 @@ app.post(['/api/negocios/:negocioId/reservas', '/api/reservas'], (req, res) => {
       success: false,
       code: 'HORARIO_NO_DISPONIBLE',
       message: `El espacio ya está reservado de ${conflict.startTime} a ${conflict.endTime} por ${conflict.clientName}.`,
+    });
+  }
+
+  const fixedConflict = findFixedTurnConflict(tenantId, espacioId, r.date, r.startTime, r.endTime);
+  if (fixedConflict) {
+    return res.status(409).json({
+      success: false,
+      code: 'TURNO_FIJO_OCUPADO',
+      message: `Ese horario pertenece al turno fijo de ${fixedConflict.clientName} (${fixedConflict.startTime} a ${fixedConflict.endTime}).`,
     });
   }
 
@@ -738,6 +896,25 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, re
   if (!cur) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Reserva no encontrada.' });
 
   const r = req.body;
+  const nextSpaceId = r.espacioId || cur.espacioId;
+  const nextDate = r.date ?? cur.date;
+  const nextStart = r.startTime ?? cur.startTime;
+  const nextEnd = r.endTime ?? cur.endTime;
+  if (nextStart >= nextEnd) {
+    return res.status(400).json({ success: false, code: 'INVALID_TIME_RANGE', message: 'La hora de fin debe ser posterior a la hora de inicio.' });
+  }
+  const overlap = db.prepare(`
+    SELECT id, clientName, startTime, endTime FROM reservas
+    WHERE negocioId = ? AND espacioId = ? AND date = ? AND estado <> 'cancelada'
+      AND id <> ? AND startTime < ? AND endTime > ? LIMIT 1
+  `).get(tenantId, nextSpaceId, nextDate, id, nextEnd, nextStart);
+  if (overlap) {
+    return res.status(409).json({ success: false, code: 'HORARIO_NO_DISPONIBLE', message: `El espacio ya está reservado de ${overlap.startTime} a ${overlap.endTime} por ${overlap.clientName}.` });
+  }
+  const fixedConflict = findFixedTurnConflict(tenantId, nextSpaceId, nextDate, nextStart, nextEnd);
+  if (fixedConflict) {
+    return res.status(409).json({ success: false, code: 'TURNO_FIJO_OCUPADO', message: `Ese horario pertenece al turno fijo de ${fixedConflict.clientName} (${fixedConflict.startTime} a ${fixedConflict.endTime}).` });
+  }
   const now = new Date().toISOString();
   const amount = r.amount !== undefined ? Number(r.amount) : cur.amount;
   const sena = r.senaPagada !== undefined ? Number(r.senaPagada) : cur.senaPagada;
@@ -745,7 +922,7 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, re
 
   db.prepare(`
     UPDATE reservas SET
-      clientName = ?, clientPhone = ?, date = ?, startTime = ?, endTime = ?,
+      clientName = ?, clientPhone = ?, espacioId = ?, date = ?, startTime = ?, endTime = ?,
       paymentStatus = ?, paymentMethod = ?, amount = ?, paidAmount = ?,
       senaPagada = ?, saldoPendiente = ?, personas = ?, notes = ?, estado = ?,
       updatedAt = ?
@@ -753,9 +930,10 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, re
   `).run(
     r.clientName ?? cur.clientName,
     r.clientPhone ?? cur.clientPhone,
-    r.date ?? cur.date,
-    r.startTime ?? cur.startTime,
-    r.endTime ?? cur.endTime,
+    nextSpaceId,
+    nextDate,
+    nextStart,
+    nextEnd,
     r.paymentStatus ?? cur.paymentStatus,
     r.paymentMethod ?? cur.paymentMethod,
     amount,
@@ -781,6 +959,107 @@ app.delete(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req,
   res.json({ success: true, message: 'Reserva eliminada.' });
 });
 
+app.get(['/api/negocios/:negocioId/turnos-fijos', '/api/turnos-fijos'], (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const rows = db.prepare('SELECT * FROM turnos_fijos WHERE negocioId = ? ORDER BY dayOfWeek, startTime').all(tenantId);
+  res.json(rows.map(t => ({ ...t, activo: Boolean(t.activo) })));
+});
+
+app.post(['/api/negocios/:negocioId/turnos-fijos', '/api/turnos-fijos'], (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const t = req.body || {};
+  const espacioId = String(t.espacioId || '');
+  const clientName = String(t.clientName || '').trim();
+  const dayOfWeek = Number(t.dayOfWeek);
+  const startDate = String(t.startDate || '');
+  const endDate = String(t.endDate || '');
+  const startTime = String(t.startTime || '');
+  const endTime = String(t.endTime || '');
+  const amount = t.amount === undefined || t.amount === '' ? 0 : Number(t.amount);
+  if (!espacioId || !clientName || !Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6 ||
+      !isReasonableDateRange(startDate, endDate) || !isValidTimeRange(startTime, endTime) ||
+      !Number.isFinite(amount) || amount < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_FIXED_TURN', message: 'Revisá cliente, día, fechas válidas (máximo 2 años), horario y precio no negativo.' });
+  }
+  const space = db.prepare('SELECT id FROM espacios WHERE id = ? AND negocioId = ? AND isActive = 1').get(espacioId, tenantId);
+  if (!space) return res.status(400).json({ success: false, code: 'ESPACIO_NO_DISPONIBLE', message: 'El espacio no existe o está inactivo.' });
+
+  // Validar todas las ocurrencias semanales contra reservas ya cargadas.
+  const occurrence = new Date(`${startDate}T12:00:00`);
+  const last = new Date(`${endDate}T12:00:00`);
+  while (occurrence.getDay() !== dayOfWeek && occurrence <= last) occurrence.setDate(occurrence.getDate() + 1);
+  for (let d = new Date(occurrence); d <= last; d.setDate(d.getDate() + 7)) {
+    const date = d.toISOString().slice(0, 10);
+    const booked = db.prepare(`
+      SELECT clientName, startTime, endTime FROM reservas
+      WHERE negocioId = ? AND espacioId = ? AND date = ? AND estado <> 'cancelada'
+        AND startTime < ? AND endTime > ? LIMIT 1
+    `).get(tenantId, espacioId, date, endTime, startTime);
+    if (booked) return res.status(409).json({ success: false, code: 'FIXED_TURN_CONFLICT', message: `No se puede fijar el turno: el ${date} ya existe una reserva de ${booked.startTime} a ${booked.endTime}.` });
+    const fixed = findFixedTurnConflict(tenantId, espacioId, date, startTime, endTime);
+    if (fixed) return res.status(409).json({ success: false, code: 'FIXED_TURN_CONFLICT', message: `Se cruza con el turno fijo de ${fixed.clientName} de ${fixed.startTime} a ${fixed.endTime}.` });
+  }
+
+  const id = t.id || `tf-${crypto.randomUUID().slice(0, 12)}`;
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO turnos_fijos (id, negocioId, espacioId, clientName, clientPhone, dayOfWeek, startDate, endDate, startTime, endTime, amount, notes, activo, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(
+      id, tenantId, espacioId, clientName, String(t.clientPhone || ''), dayOfWeek, startDate, endDate,
+      startTime, endTime, amount, String(t.notes || ''), now, now
+    );
+  res.status(201).json(db.prepare('SELECT * FROM turnos_fijos WHERE id = ? AND negocioId = ?').get(id, tenantId));
+});
+
+app.put(['/api/negocios/:negocioId/turnos-fijos/:id', '/api/turnos-fijos/:id'], (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const id = req.params.id;
+  const cur = db.prepare('SELECT * FROM turnos_fijos WHERE id = ? AND negocioId = ?').get(id, tenantId);
+  if (!cur) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Turno fijo no encontrado.' });
+  const t = req.body || {};
+  const active = t.activo !== undefined ? (t.activo ? 1 : 0) : cur.activo;
+  const clientName = String(t.clientName ?? cur.clientName).trim();
+  const startDate = String(t.startDate ?? cur.startDate);
+  const endDate = String(t.endDate ?? cur.endDate);
+  const startTime = String(t.startTime ?? cur.startTime);
+  const endTime = String(t.endTime ?? cur.endTime);
+  const dayOfWeek = Number(t.dayOfWeek ?? cur.dayOfWeek);
+  const amount = t.amount !== undefined ? Number(t.amount) : cur.amount;
+  const espacioId = String(t.espacioId ?? cur.espacioId);
+  if (!clientName || dayOfWeek < 0 || dayOfWeek > 6 || !Number.isInteger(dayOfWeek) ||
+      !isReasonableDateRange(startDate, endDate) || !isValidTimeRange(startTime, endTime) ||
+      !Number.isFinite(amount) || amount < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_FIXED_TURN', message: 'Datos inválidos: revisá cliente, día, fechas, horario y precio.' });
+  }
+  const space = db.prepare('SELECT id FROM espacios WHERE id = ? AND negocioId = ? AND isActive = 1').get(espacioId, tenantId);
+  if (!space) return res.status(400).json({ success: false, code: 'ESPACIO_NO_DISPONIBLE', message: 'El espacio no existe o está inactivo.' });
+
+  if (active) {
+    const occurrence = new Date(`${startDate}T12:00:00.000Z`);
+    const last = new Date(`${endDate}T12:00:00.000Z`);
+    while (occurrence.getUTCDay() !== dayOfWeek && occurrence <= last) occurrence.setUTCDate(occurrence.getUTCDate() + 1);
+    for (let d = new Date(occurrence); d <= last; d.setUTCDate(d.getUTCDate() + 7)) {
+      const date = d.toISOString().slice(0, 10);
+      const booked = db.prepare(`SELECT clientName, startTime, endTime FROM reservas
+        WHERE negocioId = ? AND espacioId = ? AND date = ? AND estado <> 'cancelada'
+          AND startTime < ? AND endTime > ? LIMIT 1`).get(tenantId, espacioId, date, endTime, startTime);
+      if (booked) return res.status(409).json({ success: false, code: 'FIXED_TURN_CONFLICT', message: `El ${date} ya existe una reserva de ${booked.startTime} a ${booked.endTime}.` });
+      const fixed = findFixedTurnConflict(tenantId, espacioId, date, startTime, endTime, id);
+      if (fixed) return res.status(409).json({ success: false, code: 'FIXED_TURN_CONFLICT', message: `Se cruza con el turno fijo de ${fixed.clientName} de ${fixed.startTime} a ${fixed.endTime}.` });
+    }
+  }
+
+  db.prepare(`UPDATE turnos_fijos SET espacioId = ?, clientName = ?, clientPhone = ?, dayOfWeek = ?, startDate = ?, endDate = ?, startTime = ?, endTime = ?, amount = ?, notes = ?, activo = ?, updatedAt = ? WHERE id = ? AND negocioId = ?`)
+    .run(espacioId, clientName, String(t.clientPhone ?? cur.clientPhone), dayOfWeek, startDate, endDate, startTime, endTime,
+      amount, String(t.notes ?? cur.notes), active, new Date().toISOString(), id, tenantId);
+  res.json(db.prepare('SELECT * FROM turnos_fijos WHERE id = ? AND negocioId = ?').get(id, tenantId));
+});
+
+app.delete(['/api/negocios/:negocioId/turnos-fijos/:id', '/api/turnos-fijos/:id'], (req, res) => {
+  const tenantId = resolveTenantId(req);
+  db.prepare('DELETE FROM turnos_fijos WHERE id = ? AND negocioId = ?').run(req.params.id, tenantId);
+  res.json({ success: true });
+});
+
 // ==========================================
 // 5. CAJA POR NEGOCIO & ARQUEO SEPARADO
 // ==========================================
@@ -798,47 +1077,70 @@ app.get(['/api/negocios/:negocioId/caja/sesion', '/api/caja/sesion'], (req, res)
 
 app.put(['/api/negocios/:negocioId/caja/sesion', '/api/caja/sesion'], (req, res) => {
   const tenantId = resolveTenantId(req);
-  const s = req.body;
-  if (!s) return res.status(400).json({ success: false, message: 'Datos requeridos' });
-
-  const id = s.id || `ses-${crypto.randomUUID().slice(0, 8)}`;
+  const s = req.body || {};
   const now = new Date().toISOString();
+  const id = String(s.id || '').trim();
+  const status = s.status || 'abierta';
+  const openingAmount = Number(s.openingAmount ?? 0);
 
-  db.prepare(`
-    INSERT INTO caja_sesiones (id, negocioId, status, openedAt, openingAmount, closedAt, closingAmount, expectedAmount, openedBy, closedBy, totalVentas, totalIngresos, totalEgresos, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      status = excluded.status,
-      openedAt = excluded.openedAt,
-      openingAmount = excluded.openingAmount,
-      closedAt = excluded.closedAt,
-      closingAmount = excluded.closingAmount,
-      expectedAmount = excluded.expectedAmount,
-      openedBy = excluded.openedBy,
-      closedBy = excluded.closedBy,
-      totalVentas = excluded.totalVentas,
-      totalIngresos = excluded.totalIngresos,
-      totalEgresos = excluded.totalEgresos,
-      updatedAt = excluded.updatedAt
-  `).run(
-    id,
-    tenantId,
-    s.status || 'abierta',
-    s.openedAt || now,
-    Number(s.openingAmount || 0),
-    s.closedAt || null,
-    s.closingAmount !== undefined ? Number(s.closingAmount) : null,
-    s.expectedAmount !== undefined ? Number(s.expectedAmount) : null,
-    s.openedBy || 'Administrador',
-    s.closedBy || null,
-    Number(s.totalVentas || 0),
-    Number(s.totalIngresos || 0),
-    Number(s.totalEgresos || 0),
-    now,
-    now
-  );
+  if (!id || !['abierta', 'cerrada'].includes(status)) {
+    return res.status(400).json({ success: false, code: 'INVALID_CASH_SESSION', message: 'Sesión o estado de caja inválido.' });
+  }
+  if (!Number.isFinite(openingAmount) || openingAmount < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'El monto de apertura debe ser un número válido no negativo.' });
+  }
 
-  res.json(db.prepare('SELECT * FROM caja_sesiones WHERE id = ?').get(id));
+  const existing = db.prepare('SELECT * FROM caja_sesiones WHERE id = ?').get(id);
+  if (existing && String(existing.negocioId).toLowerCase() !== tenantId.toLowerCase()) {
+    return res.status(409).json({ success: false, code: 'CASH_SESSION_TENANT_CONFLICT', message: 'La sesión de caja pertenece a otro negocio.' });
+  }
+
+  // La sesión se crea una sola vez. No se permite reabrir una caja cerrada
+  // ni cambiar sus datos contables mediante una actualización genérica.
+  if (!existing) {
+    if (status !== 'abierta') {
+      return res.status(400).json({ success: false, code: 'INVALID_CASH_SESSION_TRANSITION', message: 'Una sesión nueva debe abrirse antes de cerrarse.' });
+    }
+    const active = db.prepare("SELECT id FROM caja_sesiones WHERE negocioId = ? AND status = 'abierta' LIMIT 1").get(tenantId);
+    if (active) {
+      return res.status(409).json({ success: false, code: 'CAJA_YA_ABIERTA', message: 'Ya existe una caja abierta para este negocio.' });
+    }
+    db.prepare(`
+      INSERT INTO caja_sesiones (id, negocioId, status, openedAt, openingAmount, openedBy, totalVentas, totalIngresos, totalEgresos, createdAt, updatedAt)
+      VALUES (?, ?, 'abierta', ?, ?, ?, 0, 0, 0, ?, ?)
+    `).run(id, tenantId, s.openedAt || now, openingAmount, req.user?.nombre || String(s.openedBy || 'Administrador').slice(0, 120), now, now);
+    return res.status(200).json(db.prepare('SELECT * FROM caja_sesiones WHERE id = ? AND negocioId = ?').get(id, tenantId));
+  }
+
+  if (existing.status !== 'abierta') {
+    return res.status(409).json({ success: false, code: 'CAJA_YA_CERRADA', message: 'La sesión ya está cerrada y no puede modificarse.' });
+  }
+  if (status !== 'cerrada') {
+    return res.status(409).json({ success: false, code: 'CASH_SESSION_IMMUTABLE', message: 'La sesión abierta no se puede sobrescribir; usá el cierre de caja.' });
+  }
+
+  const closingAmount = Number(s.closingAmount);
+  if (!Number.isFinite(closingAmount) || closingAmount < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'El monto contado debe ser un número válido no negativo.' });
+  }
+
+  const closeTx = db.transaction(() => {
+    const totals = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN type = 'ingreso' AND method = 'efectivo' THEN amount ELSE 0 END), 0) AS ingresosEfectivo,
+        COALESCE(SUM(CASE WHEN type = 'egreso' AND method = 'efectivo' THEN amount ELSE 0 END), 0) AS egresosEfectivo
+      FROM caja_movimientos WHERE negocioId = ? AND sessionId = ?
+    `).get(tenantId, id);
+    const expectedAmount = existing.openingAmount + totals.ingresosEfectivo - totals.egresosEfectivo;
+    db.prepare(`
+      UPDATE caja_sesiones SET status = 'cerrada', closedAt = ?, closingAmount = ?,
+        expectedAmount = ?, differenceAmount = ?, closedBy = ?, updatedAt = ?
+      WHERE id = ? AND negocioId = ? AND status = 'abierta'
+    `).run(now, closingAmount, expectedAmount, closingAmount - expectedAmount,
+      req.user?.nombre || String(s.closedBy || 'Administrador').slice(0, 120), now, id, tenantId);
+  });
+  closeTx();
+  res.json(db.prepare('SELECT * FROM caja_sesiones WHERE id = ? AND negocioId = ?').get(id, tenantId));
 });
 
 // Movimientos de la sesión activa
@@ -875,8 +1177,8 @@ app.get(['/api/negocios/:negocioId/caja/historial', '/api/caja/historial'], (req
 // Apertura de caja transaccional
 app.post(['/api/negocios/:negocioId/caja/abrir', '/api/caja/abrir'], (req, res) => {
   const tenantId = resolveTenantId(req);
-  const { openingAmount, openedBy } = req.body;
-  const initial = Number(openingAmount || 0);
+  const { openingAmount, openedBy } = req.body || {};
+  const initial = Number(openingAmount ?? 0);
 
   if (!Number.isFinite(initial) || initial < 0) {
     return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'Monto inicial inválido.' });
@@ -917,8 +1219,11 @@ app.post(['/api/negocios/:negocioId/caja/abrir', '/api/caja/abrir'], (req, res) 
 // Cierre de caja transaccional con arqueo físico vs electrónico
 app.post(['/api/negocios/:negocioId/caja/cerrar', '/api/caja/cerrar'], (req, res) => {
   const tenantId = resolveTenantId(req);
-  const { closingAmount, closedBy } = req.body;
-  const physicalCounted = Number(closingAmount ?? 0);
+  const { closingAmount, closedBy } = req.body || {};
+  const physicalCounted = Number(closingAmount);
+  if (!Number.isFinite(physicalCounted) || physicalCounted < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'El monto contado debe ser un número válido no negativo.' });
+  }
 
   const closeTx = db.transaction(() => {
     const session = db.prepare(`
@@ -982,16 +1287,19 @@ app.post(['/api/negocios/:negocioId/caja/cerrar', '/api/caja/cerrar'], (req, res
 // Movimiento manual en caja
 app.post(['/api/negocios/:negocioId/caja/movimientos', '/api/caja/movimientos'], (req, res) => {
   const tenantId = resolveTenantId(req);
-  const { type, amount, method, description, categoria } = req.body;
+  const { type, amount, method, description, categoria } = req.body || {};
   const numAmount = Number(amount);
 
   if (!Number.isFinite(numAmount) || numAmount <= 0) {
     return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'El importe debe ser mayor a cero.' });
   }
+  if (!['efectivo', 'transferencia', 'mercadopago', 'tarjeta'].includes(method)) {
+    return res.status(400).json({ success: false, code: 'INVALID_METHOD', message: 'Método de pago inválido.' });
+  }
   if (!['ingreso', 'egreso'].includes(type)) {
     return res.status(400).json({ success: false, code: 'INVALID_TYPE', message: 'Tipo debe ser ingreso o egreso.' });
   }
-  if (!description || !description.trim()) {
+  if (typeof description !== 'string' || !description.trim()) {
     return res.status(400).json({ success: false, code: 'MISSING_DESC', message: 'La descripción es obligatoria.' });
   }
 
@@ -1210,8 +1518,17 @@ app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id'], (req, res)
 app.delete(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id'], (req, res) => {
   const tenantId = resolveTenantId(req);
   const { id } = req.params;
-  db.prepare('DELETE FROM pedido_items WHERE pedidoId = ?').run(id);
-  db.prepare('DELETE FROM pedidos WHERE id = ? AND negocioId = ?').run(id, tenantId);
+  const pedido = db.prepare('SELECT id FROM pedidos WHERE id = ? AND negocioId = ?').get(id, tenantId);
+  if (!pedido) {
+    return res.status(404).json({ success: false, code: 'PEDIDO_NOT_FOUND', message: 'Pedido no encontrado en este negocio.' });
+  }
+
+  // Validar pertenencia antes de borrar ítems y ejecutar todo de forma atómica.
+  const deleteTx = db.transaction(() => {
+    db.prepare('DELETE FROM pedido_items WHERE pedidoId = ?').run(id);
+    db.prepare('DELETE FROM pedidos WHERE id = ? AND negocioId = ?').run(id, tenantId);
+  });
+  deleteTx();
   res.json({ success: true, message: 'Pedido eliminado correctamente' });
 });
 
