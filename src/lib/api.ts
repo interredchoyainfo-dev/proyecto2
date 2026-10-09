@@ -138,10 +138,7 @@ export const api = {
     return request<{ success: boolean }>(`${tenantPath(t)}/reservas/${encodeURIComponent(id)}`, { method: 'DELETE' }, t);
   },
 
-  retryReservaWhatsApp: (id: string, negocioId?: string) => {
-    const t = negocioId || getApiTenant();
-    return request<any>(`${tenantPath(t)}/reservas/${encodeURIComponent(id)}/notificacion-whatsapp/reintentar`, { method: 'POST' }, t);
-  },
+
 
   // Turnos fijos recurrentes
   getTurnosFijos: (negocioId?: string) =>
