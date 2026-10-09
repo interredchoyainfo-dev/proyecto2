@@ -20,6 +20,7 @@ const paymentBadge: Record<string, string> = {
 
 export function Reservations() {
   const reservations = useStore((s) => s.reservations);
+  const clients = useStore((s) => s.clients);
   const { negocioId } = useParams<{ negocioId: string }>();
   const tenants = useSuperAdminStore((s) => s.tenants);
   const business = tenants.find((t) => t.slug.toLowerCase() === (negocioId || 'giovanni').toLowerCase() || t.id.toLowerCase() === (negocioId || 'giovanni').toLowerCase());
@@ -91,6 +92,7 @@ export function Reservations() {
         return;
       }
 
+      const client = clients.find((c) => c.id === selectedRes.clientId && (c.negocioId || 'giovanni').toLowerCase() === (negocioId || 'giovanni').toLowerCase());
       const total = Number(selectedRes.amount || 0);
       const pagado = Number(selectedRes.paidAmount || 0);
       const saldo = Math.max(0, total - pagado);
@@ -115,9 +117,9 @@ export function Reservations() {
         `Medio de pago: ${(selectedRes as any).paymentMethod || 'No informado'}`,
         '',
         'DATOS DEL CLIENTE',
-        `Nombre: ${selectedRes.clientName || 'No informado'}`,
-        `Teléfono: ${selectedRes.clientPhone || 'No informado'}`,
-        `Email: ${(selectedRes as any).clientEmail || 'No informado'}`,
+        `Nombre: ${selectedRes.clientName || client?.name || 'No informado'}`,
+        `Teléfono: ${selectedRes.clientPhone || client?.phone || 'No informado'}`,
+        `Email: ${client?.email || (selectedRes as any).clientEmail || 'No informado'}`,
         `Observaciones: ${selectedRes.notes || 'Sin observaciones'}`,
       ].join('\n');
       const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
