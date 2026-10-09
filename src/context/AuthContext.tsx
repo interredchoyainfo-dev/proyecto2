@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { User, UserRole } from '../types';
-
-const API_BASE = 'http://localhost:3001';
+import { API_BASE_URL } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -27,7 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         JSON.parse(stored); // Validate stored data is valid JSON
         // Validar token contra el servidor antes de restaurar
-        fetch(`${API_BASE}/api/auth/me`, {
+        fetch(`${API_BASE_URL}/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         })
           .then((res) => {
@@ -69,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const cleanPass = password.trim();
 
     try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -101,10 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     pin: string,
     tenantSlugOrId?: string
   ): Promise<boolean> => {
-    const targetNegocio = tenantSlugOrId?.toLowerCase() || 'giovanni';
+    const targetNegocio = tenantSlugOrId?.toLowerCase() || 'superadmin';
 
     try {
-      const res = await fetch(`${API_BASE}/api/auth/pin`, {
+      const res = await fetch(`${API_BASE_URL}/auth/pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin, negocioId: targetNegocio }),
