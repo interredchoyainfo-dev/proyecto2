@@ -977,7 +977,7 @@ app.post(['/api/negocios/:negocioId/reservas', '/api/reservas'], (req, res) => {
   res.status(201).json(rowReserva(created));
 });
 
-app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, res) => {
+app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], async (req, res) => {
   const tenantId = resolveTenantId(req);
   const id = req.params.id;
   const cur = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(id, tenantId);
