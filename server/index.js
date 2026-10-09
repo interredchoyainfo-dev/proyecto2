@@ -781,10 +781,16 @@ const rowReserva = (r) =>
 
 
 function normalizeWhatsAppRecipient(value) {
-  const digits = String(value || '').replace(/\\D/g, '');
+  let digits = String(value || '').replace(/\\D/g, '');
   if (!digits) return '';
-  if (digits.startsWith('00')) return digits.slice(2);
-  return digits.startsWith('54') ? digits : `54${digits.replace(/^0+/, '')}`;
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('549')) return digits;
+  if (digits.startsWith('54')) {
+    const national = digits.slice(2).replace(/^0+/, '');
+    return national.length === 10 ? `549${national}` : `54${national}`;
+  }
+  digits = digits.replace(/^0+/, '');
+  return digits.length === 10 ? `549${digits}` : `54${digits}`;
 }
 
 function formatReservationCompletionMessage({ business, reservation, space, client }) {
