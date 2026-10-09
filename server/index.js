@@ -39,6 +39,7 @@ export function resolveTenantId(req) {
   const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
   const pathMatch = originalPath.match(/^\/api\/negocios\/([^/]+)/i);
   const tenantId =
+    req.authorizedTenantId ||
     req.params?.negocioId ||
     pathMatch?.[1] ||
     req.headers['x-negocio-id'] ||
@@ -553,6 +554,9 @@ app.use('/api', (req, res, next) => {
 
     try {
       authorizeTenant(req, tenant.id);
+      // Desde aquí en adelante, todas las consultas deben usar el ID canónico
+      // del negocio, aunque la URL haya usado su slug.
+      req.authorizedTenantId = tenant.id;
       req.tenantId = tenant.id;
       next();
     } catch (error) {
