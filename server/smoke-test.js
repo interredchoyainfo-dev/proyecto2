@@ -26,6 +26,8 @@ const child = spawn(process.execPath, ['server/index.js'], {
     OWNER_EMAIL: 'owner@example.test',
     OWNER_PASSWORD: 'smoke-test-password',
     OWNER_PIN: '246810',
+    WA_ACCESS_TOKEN: '',
+    WA_PHONE_NUMBER_ID: '',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -325,7 +327,49 @@ try {
   });
   assert.equal(overlappingFixedTurn.status, 409, 'overlapping recurring fixed turns must be rejected');
 
-  console.log('API smoke tests passed: auth, tenant isolation, password leak protection, cash session persistence, and fixed-turn validation/conflicts.');
+  // Finalizar una reserva crea un aviso WhatsApp dirigido al número de configuración del negocio.
+  const reservationResponse = await fetch(`${baseUrl}/api/negocios/giovanni/reservas`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({
+      espacioId: smokeSpace.id,
+      clientName: 'Smoke WhatsApp Client',
+      clientPhone: '3855111222',
+      date: '2099-01-02',
+      startTime: '03:15',
+      endTime: '03:45',
+      amount: 12000,
+      paidAmount: 2000,
+      paymentStatus: 'senado',
+      paymentMethod: 'efectivo',
+      personas: 4,
+      notes: 'Datos de prueba para notificación',
+    }),
+  });
+  assert.equal(reservationResponse.status, 201, 'test reservation must be created');
+  const smokeReservation = await reservationResponse.json();
+
+  const completeReservationResponse = await fetch(`${baseUrl}/api/negocios/giovanni/reservas/${encodeURIComponent(smokeReservation.id)}`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ estado: 'completada' }),
+  });
+  assert.equal(completeReservationResponse.status, 200, 'reservation must be completed');
+  const completedReservation = await completeReservationResponse.json();
+  assert.equal(completedReservation.estado, 'completada');
+  assert.equal(completedReservation.notificacionWhatsApp?.estado, 'pendiente_config', 'notification must be queued and clearly report missing WhatsApp API credentials');
+  assert.ok(completedReservation.notificacionWhatsApp?.destino.endsWith('3855374835'), 'notification recipient must come from this tenant configuration');
+
+
+  console.log('API smoke tests passed: auth, tenant isolation, password leak protection, cash session persistence, fixed-turn validation/conflicts, and reservation WhatsApp outbox.');
 } finally {
   child.kill('SIGTERM');
   await new Promise((resolve) => {
