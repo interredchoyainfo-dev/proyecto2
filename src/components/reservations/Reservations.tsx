@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useStore } from '../../store/useStore';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
+import { useSuperAdminStore } from '../../store/useSuperAdminStore';
 import { Icon } from '../ui/Icon';
 import { ReservationModal } from './ReservationModal';
 import { FixedTurnos } from './FixedTurnos';
@@ -20,8 +21,11 @@ const paymentBadge: Record<string, string> = {
 export function Reservations() {
   const reservations = useStore((s) => s.reservations);
   const { negocioId } = useParams<{ negocioId: string }>();
+  const tenants = useSuperAdminStore((s) => s.tenants);
+  const business = tenants.find((t) => t.slug.toLowerCase() === (negocioId || 'giovanni').toLowerCase() || t.id.toLowerCase() === (negocioId || 'giovanni').toLowerCase());
   const [completionNotice, setCompletionNotice] = useState('');
   const [completionError, setCompletionError] = useState('');
+  const [completionWhatsAppUrl, setCompletionWhatsAppUrl] = useState('');
   const allEspacios = useEspaciosStore((s) => s.espacios);
   const [modalOpen, setModalOpen] = useState(false);
   const [showFixedTurnos, setShowFixedTurnos] = useState(false);
@@ -58,40 +62,74 @@ export function Reservations() {
 
   const courtName = (id: string) => allEspacios.find((c) => c.id === id)?.name ?? id;
 
-  const retryReservationNotice = async () => {
-    if (!selectedRes) return;
-    setCompletionNotice('');
-    setCompletionError('');
-    try {
-      const result = await api.retryReservaWhatsApp(selectedRes.id, negocioId || selectedRes.negocioId || 'giovanni');
-      const notice = result?.notificacionWhatsApp;
-      setSelectedRes((current) => current ? { ...current, notificacionWhatsApp: notice } as any : current);
-      if (notice?.estado === 'enviada') setCompletionNotice('Aviso de WhatsApp enviado correctamente.');
-      else if (notice?.estado === 'pendiente_config') setCompletionNotice('El aviso sigue pendiente: falta configurar la integración de WhatsApp en el servidor.');
-      else if (notice?.estado === 'sin_destino') setCompletionError('No hay un número de WhatsApp configurado para este negocio.');
-      else setCompletionError(`No se pudo enviar el aviso: ${notice?.error || 'revisá la configuración de WhatsApp'}.`);
-    } catch (error) {
-      setCompletionError(error instanceof Error ? error.message : 'No se pudo reintentar el aviso.');
-    }
-  };
-
   const finalizeReservation = async () => {
     if (!selectedRes || selectedRes.estado === 'completada' || selectedRes.estado === 'cancelada') return;
     setCompletionNotice('');
     setCompletionError('');
+    setCompletionWhatsAppUrl('');
+
+    const rawPhone = String((business as any)?.whatsapp || '').replace(/\\D/g, '');
+    const localPhone = rawPhone.replace(/^0/, '');
+    const whatsappNumber = localPhone.startsWith('54')
+      ? localPhone
+      : localPhone.length === 10
+        ? `549${localPhone}`
+        : localPhone;
+    const whatsappWindow = whatsappNumber ? window.open('about:blank', '_blank') : null;
+
     try {
       const updated = await api.updateReserva(negocioId || selectedRes.negocioId || 'giovanni', selectedRes.id, { estado: 'completada' });
       useStore.setState((state) => ({
         reservations: state.reservations.map((r) => r.id === selectedRes.id ? { ...r, ...updated } : r),
       }));
       setSelectedRes((current) => current ? { ...current, ...updated } : current);
-      const notice = (updated as any)?.notificacionWhatsApp;
-      if (notice?.estado === 'enviada') setCompletionNotice('Reserva finalizada. WhatsApp enviado al número configurado para este negocio.');
-      else if (notice?.estado === 'pendiente_config') setCompletionNotice('Reserva finalizada. Falta configurar WA_ACCESS_TOKEN y WA_PHONE_NUMBER_ID en el servidor para el envío automático.');
-      else if (notice?.estado === 'sin_destino') setCompletionNotice('Reserva finalizada, pero este negocio no tiene un WhatsApp configurado en Configuración.');
-      else if (notice?.estado === 'fallida') setCompletionError(`Reserva finalizada, pero WhatsApp no pudo enviarse: ${notice.error || 'error de proveedor'}.`);
-      else setCompletionNotice('Reserva finalizada. Se registró el aviso de WhatsApp.');
+
+      if (!whatsappNumber) {
+        if (whatsappWindow) whatsappWindow.close();
+        setCompletionNotice('Reserva finalizada.');
+        setCompletionError('No hay un WhatsApp configurado para este negocio. Cargalo en Configuración para poder abrir el mensaje.');
+        return;
+      }
+
+      const total = Number(selectedRes.amount || 0);
+      const pagado = Number(selectedRes.paidAmount || 0);
+      const saldo = Math.max(0, total - pagado);
+      const space = courtName(selectedRes.espacioId || (selectedRes as any).courtId);
+      const message = [
+        `Hola, te compartimos el detalle de la reserva finalizada de ${business?.nombre || 'nuestro complejo'}.`,
+        '',
+        'DATOS DEL NEGOCIO',
+        `Negocio: ${business?.nombre || negocioId || 'Complejo'}`,
+        '',
+        'DATOS DE LA RESERVA',
+        `Código: ${selectedRes.id}`,
+        'Estado: Finalizada',
+        `Espacio: ${space}`,
+        `Fecha: ${selectedRes.date}`,
+        `Horario: ${selectedRes.startTime} a ${selectedRes.endTime}`,
+        `Personas: ${(selectedRes as any).personas ?? 'No informado'}`,
+        `Importe total: $${total.toLocaleString('es-AR')}`,
+        `Seña / pagado: $${pagado.toLocaleString('es-AR')}`,
+        `Saldo pendiente: $${saldo.toLocaleString('es-AR')}`,
+        `Estado de pago: ${selectedRes.paymentStatus || 'No informado'}`,
+        `Medio de pago: ${(selectedRes as any).paymentMethod || 'No informado'}`,
+        '',
+        'DATOS DEL CLIENTE',
+        `Nombre: ${selectedRes.clientName || 'No informado'}`,
+        `Teléfono: ${selectedRes.clientPhone || 'No informado'}`,
+        `Email: ${(selectedRes as any).clientEmail || 'No informado'}`,
+        `Observaciones: ${selectedRes.notes || 'Sin observaciones'}`,
+      ].join('\\n');
+      const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+      setCompletionWhatsAppUrl(url);
+      if (whatsappWindow) {
+        whatsappWindow.location.href = url;
+      } else {
+        setCompletionError('La reserva se finalizó, pero el navegador bloqueó la ventana de WhatsApp. Usá el enlace que aparece abajo.');
+      }
+      setCompletionNotice('Reserva finalizada. WhatsApp se abre con el mensaje preparado; revisalo y tocá Enviar.');
     } catch (error) {
+      if (whatsappWindow) whatsappWindow.close();
       setCompletionError(error instanceof Error ? error.message : 'No se pudo finalizar la reserva.');
     }
   };
@@ -294,26 +332,18 @@ export function Reservations() {
               )}
             </div>
             <div className="flex flex-col gap-2 pt-2">
-              {selectedRes.estado === 'completada' && (
-                <button
-                  type="button"
-                  onClick={retryReservationNotice}
-                  className="w-full py-2.5 rounded-xl border border-emerald-600 text-emerald-700 dark:text-emerald-400 font-semibold text-center"
-                >
-                  Reintentar aviso WhatsApp
-                </button>
-              )}
               {selectedRes.estado !== 'completada' && selectedRes.estado !== 'cancelada' && (
                 <button
                   type="button"
                   onClick={finalizeReservation}
                   className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-center"
                 >
-                  Marcar como finalizada y avisar al negocio
+                  Finalizar reserva y abrir WhatsApp
                 </button>
               )}
               {completionNotice && <p role="status" className="text-sm text-emerald-600 dark:text-emerald-400">{completionNotice}</p>}
               {completionError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{completionError}</p>}
+              {completionWhatsAppUrl && <a href={completionWhatsAppUrl} target="_blank" rel="noopener noreferrer" className="w-full py-2.5 rounded-xl border border-emerald-600 text-emerald-700 dark:text-emerald-400 font-semibold text-center">Abrir WhatsApp con el detalle</a>}
 <a
                 href={`https://wa.me/${selectedRes.clientPhone.replace(/\D/g, '').replace(/^0/, '54')}?text=${encodeURIComponent(
                   `Hola ${selectedRes.clientName}! Te escribimos de Complejo Giovanni por tu reserva del ${selectedRes.date} de ${selectedRes.startTime} a ${selectedRes.endTime} en ${courtName(selectedRes.espacioId || (selectedRes as any).courtId)}. ¿Confirmás asistencia?`
