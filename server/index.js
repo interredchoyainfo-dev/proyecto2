@@ -512,9 +512,9 @@ app.post('/api/tenants/:id/init', (req, res) => {
 
 // Todas las API operativas requieren sesión y autorización del negocio.
 // Se excluyen autenticación, administración de tenants (ya protegida arriba) y health check.
-app.use('/api', authenticate, (req, res, next) => {
-  // Express puede exponer req.path relativo al mount; usamos originalUrl para
-  // excluir correctamente los endpoints públicos/de administración ya protegidos.
+app.use('/api', (req, res, next) => {
+  // Comprobar las rutas públicas antes de autenticar. Express puede exponer
+  // req.path relativo al mount; originalUrl conserva la ruta completa.
   const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
   if (
     originalPath.startsWith('/api/auth/') ||
@@ -525,42 +525,44 @@ app.use('/api', authenticate, (req, res, next) => {
     return next();
   }
 
-  // Para rutas con negocio en la URL, ese identificador es la fuente de verdad.
-  // Para alias antiguos (/api/productos, etc.) exigimos selector explícito.
-  const pathMatch = originalPath.match(/^\/api\/negocios\/([^/]+)/i);
-  const suppliedTenant = pathMatch?.[1] || req.headers['x-negocio-id'] || req.query.negocioId;
-  if (!suppliedTenant || !String(suppliedTenant).trim()) {
-    return res.status(400).json({
-      success: false,
-      code: 'TENANT_REQUIRED',
-      message: 'Debés indicar el negocio para esta operación.',
-    });
-  }
+  authenticate(req, res, () => {
+    // Para rutas con negocio en la URL, ese identificador es la fuente de verdad.
+    // Para alias antiguos (/api/productos, etc.) exigimos selector explícito.
+    const pathMatch = originalPath.match(/^\/api\/negocios\/([^/]+)/i);
+    const suppliedTenant = pathMatch?.[1] || req.headers['x-negocio-id'] || req.query.negocioId;
+    if (!suppliedTenant || !String(suppliedTenant).trim()) {
+      return res.status(400).json({
+        success: false,
+        code: 'TENANT_REQUIRED',
+        message: 'Debés indicar el negocio para esta operación.',
+      });
+    }
 
-  const requestedTenant = resolveTenantId(req);
-  const tenant = db.prepare(
-    'SELECT id FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1'
-  ).get(requestedTenant, requestedTenant);
+    const requestedTenant = resolveTenantId(req);
+    const tenant = db.prepare(
+      'SELECT id FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1'
+    ).get(requestedTenant, requestedTenant);
 
-  if (!tenant) {
-    return res.status(404).json({
-      success: false,
-      code: 'TENANT_NOT_FOUND',
-      message: 'El negocio solicitado no existe.',
-    });
-  }
+    if (!tenant) {
+      return res.status(404).json({
+        success: false,
+        code: 'TENANT_NOT_FOUND',
+        message: 'El negocio solicitado no existe.',
+      });
+    }
 
-  try {
-    authorizeTenant(req, tenant.id);
-    req.tenantId = tenant.id;
-    next();
-  } catch (error) {
-    return res.status(error.status || 403).json({
-      success: false,
-      code: error.code || 'TENANT_FORBIDDEN',
-      message: error.message || 'No tenés permiso para operar sobre este negocio.',
-    });
-  }
+    try {
+      authorizeTenant(req, tenant.id);
+      req.tenantId = tenant.id;
+      next();
+    } catch (error) {
+      return res.status(error.status || 403).json({
+        success: false,
+        code: error.code || 'TENANT_FORBIDDEN',
+        message: error.message || 'No tenés permiso para operar sobre este negocio.',
+      });
+    }
+  });
 });
 
 // ==========================================
