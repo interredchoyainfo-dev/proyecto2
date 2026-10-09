@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import db from './db.js';
 import {
@@ -70,8 +71,24 @@ app.use(optionalAuth);
 // 1. AUTENTICACIÓN REAL (/api/auth)
 // ==========================================
 
+// Limitar intentos de autenticación para reducir ataques de fuerza bruta.
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { success: false, code: 'TOO_MANY_ATTEMPTS', message: 'Demasiados intentos. Esperá 15 minutos y volvé a intentar.' },
+});
+const pinRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { success: false, code: 'TOO_MANY_PIN_ATTEMPTS', message: 'Demasiados intentos de PIN. Esperá 15 minutos y volvé a intentar.' },
+});
+
 // Login con Usuario y Contraseña
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', loginRateLimit, (req, res) => {
   const { email, username, password, negocioId } = req.body;
   const userIdentifier = (email || username || '').trim().toLowerCase();
   const cleanPass = (password || '').trim();
@@ -178,7 +195,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 // Login con PIN (para Mozos, Cocina, etc.)
-app.post('/api/auth/pin', (req, res) => {
+app.post('/api/auth/pin', pinRateLimit, (req, res) => {
   const { pin, negocioId } = req.body;
   const cleanPin = (pin || '').trim();
   const targetTenant = (negocioId || req.tenantId || 'giovanni').trim().toLowerCase();
@@ -299,7 +316,6 @@ app.get('/api/tenants', (req, res) => {
     plan: r.plan || 'trial',
     isActive: !!r.isActive,
     adminUser: r.adminUser || 'admin',
-    adminPassword: r.adminPassword || 'admin',
     theme: r.themeJson ? JSON.parse(r.themeJson) : undefined,
     modulos: r.modulosJson ? JSON.parse(r.modulosJson) : {},
     createdAt: r.createdAt,
@@ -325,7 +341,6 @@ app.get('/api/tenants/:id', (req, res) => {
     plan: r.plan || 'trial',
     isActive: !!r.isActive,
     adminUser: r.adminUser || 'admin',
-    adminPassword: r.adminPassword || 'admin',
     theme: r.themeJson ? JSON.parse(r.themeJson) : undefined,
     modulos: r.modulosJson ? JSON.parse(r.modulosJson) : {},
     createdAt: r.createdAt,
@@ -377,13 +392,24 @@ app.post('/api/tenants', (req, res) => {
 
   tx();
   const created = db.prepare('SELECT * FROM negocios WHERE id = ?').get(id);
+  // Nunca devolver columnas internas que puedan contener credenciales.
   res.status(201).json({
     success: true,
     tenant: {
-      ...created,
+      id: created.id,
+      slug: created.slug,
+      nombre: created.nombre,
+      logoUrl: created.logoUrl,
+      subtitulo: created.subtitulo,
+      descripcion: created.descripcion,
+      whatsapp: created.whatsapp,
+      plan: created.plan,
       isActive: !!created.isActive,
+      adminUser: created.adminUser,
       theme: created.themeJson ? JSON.parse(created.themeJson) : undefined,
       modulos: created.modulosJson ? JSON.parse(created.modulosJson) : {},
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
     },
     message: `Negocio "${b.nombre}" creado exitosamente.`,
   });
@@ -1210,8 +1236,17 @@ app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id'], (req, res)
 app.delete(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id'], (req, res) => {
   const tenantId = resolveTenantId(req);
   const { id } = req.params;
-  db.prepare('DELETE FROM pedido_items WHERE pedidoId = ?').run(id);
-  db.prepare('DELETE FROM pedidos WHERE id = ? AND negocioId = ?').run(id, tenantId);
+  const pedido = db.prepare('SELECT id FROM pedidos WHERE id = ? AND negocioId = ?').get(id, tenantId);
+  if (!pedido) {
+    return res.status(404).json({ success: false, code: 'PEDIDO_NOT_FOUND', message: 'Pedido no encontrado en este negocio.' });
+  }
+
+  // Validar pertenencia antes de borrar ítems y ejecutar todo de forma atómica.
+  const deleteTx = db.transaction(() => {
+    db.prepare('DELETE FROM pedido_items WHERE pedidoId = ?').run(id);
+    db.prepare('DELETE FROM pedidos WHERE id = ? AND negocioId = ?').run(id, tenantId);
+  });
+  deleteTx();
   res.json({ success: true, message: 'Pedido eliminado correctamente' });
 });
 
