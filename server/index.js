@@ -1040,7 +1040,7 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], async (r
   let notification = null;
 
   // Crear un único aviso cuando el estado cambia por primera vez a completada.
-  if (cur.estado !== 'completada' && updated.estado === 'completada') {
+  if (updated.estado === 'completada') {
     const business = db.prepare('SELECT id, nombre, whatsapp FROM negocios WHERE id = ?').get(tenantId);
     const space = db.prepare('SELECT name FROM espacios WHERE id = ? AND negocioId = ?').get(updated.espacioId, tenantId);
     const client = updated.clientId
@@ -1062,7 +1062,11 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], async (r
       );
       notification = await dispatchReservationWhatsApp(notificationId);
     } else {
-      notification = existingNotice;
+      // Un aviso fallido o pendiente de configuración se puede reintentar cuando
+      // se vuelva a guardar la reserva después de configurar WhatsApp.
+      notification = ['enviada', 'sin_destino'].includes(existingNotice.estado)
+        ? existingNotice
+        : await dispatchReservationWhatsApp(existingNotice.id);
     }
   }
 
