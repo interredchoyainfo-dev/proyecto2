@@ -33,17 +33,16 @@ app.use(
 );
 app.use(express.json({ limit: '5mb' }));
 
-// Helper para extraer el tenant actual de la petición
+// Helper para extraer el tenant. La ruta canónica tiene prioridad sobre
+// cabeceras/parámetros del cliente, que nunca pueden cambiar el negocio de la URL.
 export function resolveTenantId(req) {
-  let tenantId =
-    req.params.negocioId ||
+  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
+  const pathMatch = originalPath.match(/^\/api\/negocios\/([^/]+)/i);
+  const tenantId =
+    req.params?.negocioId ||
+    pathMatch?.[1] ||
     req.headers['x-negocio-id'] ||
-    req.query.negocioId;
-
-  if (!tenantId && req.path.startsWith('/api/negocios/')) {
-    const parts = req.path.split('/');
-    if (parts[3]) tenantId = parts[3];
-  }
+    req.query?.negocioId;
 
   const clean = String(tenantId || 'giovanni').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '');
   return clean || 'giovanni';
@@ -521,6 +520,19 @@ app.use('/api', authenticate, (req, res, next) => {
     req.path === '/health'
   ) {
     return next();
+  }
+
+  // Para rutas con negocio en la URL, ese identificador es la fuente de verdad.
+  // Para alias antiguos (/api/productos, etc.) exigimos selector explícito.
+  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
+  const pathMatch = originalPath.match(/^\/api\/negocios\/([^/]+)/i);
+  const suppliedTenant = pathMatch?.[1] || req.headers['x-negocio-id'] || req.query.negocioId;
+  if (!suppliedTenant || !String(suppliedTenant).trim()) {
+    return res.status(400).json({
+      success: false,
+      code: 'TENANT_REQUIRED',
+      message: 'Debés indicar el negocio para esta operación.',
+    });
   }
 
   const requestedTenant = resolveTenantId(req);
