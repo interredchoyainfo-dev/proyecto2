@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -272,6 +273,18 @@ app.get('/api/auth/me', authenticate, (req, res) => {
 // ==========================================
 // 2. GESTIÓN DE TENANTS / SAAS (/api/tenants)
 // ==========================================
+
+// Todas las operaciones de administración de negocios requieren una sesión SuperAdmin válida.
+app.use('/api/tenants', authenticate, (req, res, next) => {
+  if (req.user?.rol !== 'superadmin') {
+    return res.status(403).json({
+      success: false,
+      code: 'SUPERADMIN_REQUIRED',
+      message: 'Se requiere una sesión SuperAdmin para administrar negocios.',
+    });
+  }
+  next();
+});
 
 app.get('/api/tenants', (req, res) => {
   const rows = db.prepare('SELECT * FROM negocios ORDER BY nombre').all();
