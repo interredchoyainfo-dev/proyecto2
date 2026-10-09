@@ -207,7 +207,76 @@ try {
   assert.equal(pinResponse.status, 200, 'configured SuperAdmin PIN must log in');
   assert.equal((await pinResponse.json()).user?.rol, 'superadmin');
 
-  console.log('API smoke tests passed: health, authentication, protected tenant management, no password leaks, and tenant isolation.');
+  // Turnos fijos: validar fechas reales, crear una recurrencia y rechazar solapamientos.
+  const spaceResponse = await fetch(`${baseUrl}/api/negocios/giovanni/espacios`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({
+      name: 'Smoke fixed-turn space',
+      type: 'futbol',
+      precioHora: 10000,
+      precioDia: 10000,
+      isActive: true,
+    }),
+  });
+  assert.equal(spaceResponse.status, 201, 'tenant must create a space for fixed-turn tests');
+  const smokeSpace = await spaceResponse.json();
+
+  const now = new Date();
+  const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const end = new Date(now);
+  end.setDate(end.getDate() + 28);
+  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+  const dayOfWeek = now.getDay();
+  const fixedTurnPayload = {
+    espacioId: smokeSpace.id,
+    clientName: 'Smoke fixed client',
+    dayOfWeek,
+    startDate,
+    endDate,
+    startTime: '10:00',
+    endTime: '11:00',
+    amount: 12000,
+    notes: 'CI test',
+  };
+  const invalidFixedTurn = await fetch(`${baseUrl}/api/negocios/giovanni/turnos-fijos`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ ...fixedTurnPayload, startDate: '2026-02-30' }),
+  });
+  assert.equal(invalidFixedTurn.status, 400, 'impossible calendar dates must be rejected');
+
+  const fixedTurnResponse = await fetch(`${baseUrl}/api/negocios/giovanni/turnos-fijos`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify(fixedTurnPayload),
+  });
+  assert.equal(fixedTurnResponse.status, 201, 'valid recurring fixed turn must be created');
+
+  const overlappingFixedTurn = await fetch(`${baseUrl}/api/negocios/giovanni/turnos-fijos`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({ ...fixedTurnPayload, clientName: 'Smoke overlapping client' }),
+  });
+  assert.equal(overlappingFixedTurn.status, 409, 'overlapping recurring fixed turns must be rejected');
+
+  console.log('API smoke tests passed: auth, tenant isolation, password leak protection, cash session persistence, and fixed-turn validation/conflicts.');
 } finally {
   child.kill('SIGTERM');
   await new Promise((resolve) => {
