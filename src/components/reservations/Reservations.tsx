@@ -58,6 +58,23 @@ export function Reservations() {
 
   const courtName = (id: string) => allEspacios.find((c) => c.id === id)?.name ?? id;
 
+  const retryReservationNotice = async () => {
+    if (!selectedRes) return;
+    setCompletionNotice('');
+    setCompletionError('');
+    try {
+      const result = await api.retryReservaWhatsApp(selectedRes.id, negocioId || selectedRes.negocioId || 'giovanni');
+      const notice = result?.notificacionWhatsApp;
+      setSelectedRes((current) => current ? { ...current, notificacionWhatsApp: notice } as any : current);
+      if (notice?.estado === 'enviada') setCompletionNotice('Aviso de WhatsApp enviado correctamente.');
+      else if (notice?.estado === 'pendiente_config') setCompletionNotice('El aviso sigue pendiente: falta configurar la integración de WhatsApp en el servidor.');
+      else if (notice?.estado === 'sin_destino') setCompletionError('No hay un número de WhatsApp configurado para este negocio.');
+      else setCompletionError(`No se pudo enviar el aviso: ${notice?.error || 'revisá la configuración de WhatsApp'}.`);
+    } catch (error) {
+      setCompletionError(error instanceof Error ? error.message : 'No se pudo reintentar el aviso.');
+    }
+  };
+
   const finalizeReservation = async () => {
     if (!selectedRes || selectedRes.estado === 'completada' || selectedRes.estado === 'cancelada') return;
     setCompletionNotice('');
@@ -277,6 +294,15 @@ export function Reservations() {
               )}
             </div>
             <div className="flex flex-col gap-2 pt-2">
+              {selectedRes.estado === 'completada' && (
+                <button
+                  type="button"
+                  onClick={retryReservationNotice}
+                  className="w-full py-2.5 rounded-xl border border-emerald-600 text-emerald-700 dark:text-emerald-400 font-semibold text-center"
+                >
+                  Reintentar aviso WhatsApp
+                </button>
+              )}
               {selectedRes.estado !== 'completada' && selectedRes.estado !== 'cancelada' && (
                 <button
                   type="button"
