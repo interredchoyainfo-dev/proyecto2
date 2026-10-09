@@ -605,7 +605,17 @@ app.post(['/api/negocios/:negocioId/espacios', '/api/espacios'], (req, res) => {
   const e = req.body;
   const id = e.id || `esp-${tenantId}-${crypto.randomUUID().slice(0, 8)}`;
   const now = new Date().toISOString();
-  const precioDia = Number(e.precioDia ?? e.precioHora ?? 12000);
+  const nombreEspacio = String(e.name || '').trim();
+  if (!nombreEspacio) return res.status(400).json({ success: false, code: 'ESPACIO_NAME_REQUIRED', message: 'El nombre del espacio es obligatorio.' });
+  const existenteId = db.prepare('SELECT * FROM espacios WHERE id = ?').get(id);
+  if (existenteId) {
+    if (String(existenteId.negocioId).toLowerCase() !== String(tenantId).toLowerCase()) return res.status(409).json({ success: false, code: 'ESPACIO_ID_TENANT_CONFLICT', message: 'El identificador pertenece a otro negocio.' });
+    return res.status(200).json(rowEspacio(existenteId));
+  }
+  const duplicado = db.prepare('SELECT * FROM espacios WHERE negocioId = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(type)) = LOWER(TRIM(?)) LIMIT 1').get(tenantId, nombreEspacio, e.type || 'futbol');
+  if (duplicado) return res.status(409).json({ success: false, code: 'ESPACIO_DUPLICATE', message: 'Ya existe un espacio con ese nombre y tipo en este negocio.', espacio: rowEspacio(duplicado) });
+  const precioHora = Number(e.precioHora ?? e.precioDia ?? 12000);
+  const precioDia = Number(e.precioDia ?? precioHora);
   const precioNoche = Number(e.precioNoche ?? Math.round(precioDia * 1.25));
 
   db.prepare(`
@@ -617,10 +627,10 @@ app.post(['/api/negocios/:negocioId/espacios', '/api/espacios'], (req, res) => {
   `).run(
     id,
     tenantId,
-    e.name || 'Espacio Nuevo',
+    nombreEspacio,
     e.type || 'futbol',
     e.status || 'libre',
-    precioDia,
+    precioHora,
     precioDia,
     precioNoche,
     e.description || '',
