@@ -80,6 +80,21 @@ try {
   assert.equal(tenantsResponse.status, 200, 'SuperAdmin token must access tenant management');
   const tenants = await tenantsResponse.json();
   assert.ok(Array.isArray(tenants.tenants), 'tenant list must be an array');
+  assert.ok(
+    tenants.tenants.every((tenant) => !Object.hasOwn(tenant, 'adminPassword')),
+    'tenant list must never expose plaintext administrative passwords'
+  );
+
+  const tenantDetailResponse = await fetch(`${baseUrl}/api/tenants/giovanni`, {
+    headers: { authorization: `Bearer ${login.token}` },
+  });
+  assert.equal(tenantDetailResponse.status, 200, 'SuperAdmin must access tenant details');
+  const tenantDetail = await tenantDetailResponse.json();
+  assert.equal(
+    Object.hasOwn(tenantDetail, 'adminPassword'),
+    false,
+    'tenant details must never expose plaintext administrative passwords'
+  );
 
   const pinResponse = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
