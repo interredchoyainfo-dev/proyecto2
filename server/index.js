@@ -513,18 +513,20 @@ app.post('/api/tenants/:id/init', (req, res) => {
 // Todas las API operativas requieren sesión y autorización del negocio.
 // Se excluyen autenticación, administración de tenants (ya protegida arriba) y health check.
 app.use('/api', authenticate, (req, res, next) => {
+  // Express puede exponer req.path relativo al mount; usamos originalUrl para
+  // excluir correctamente los endpoints públicos/de administración ya protegidos.
+  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
   if (
-    req.path.startsWith('/auth/') ||
-    req.path === '/tenants' ||
-    req.path.startsWith('/tenants/') ||
-    req.path === '/health'
+    originalPath.startsWith('/api/auth/') ||
+    originalPath === '/api/tenants' ||
+    originalPath.startsWith('/api/tenants/') ||
+    originalPath === '/api/health'
   ) {
     return next();
   }
 
   // Para rutas con negocio en la URL, ese identificador es la fuente de verdad.
   // Para alias antiguos (/api/productos, etc.) exigimos selector explícito.
-  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
   const pathMatch = originalPath.match(/^\/api\/negocios\/([^/]+)/i);
   const suppliedTenant = pathMatch?.[1] || req.headers['x-negocio-id'] || req.query.negocioId;
   if (!suppliedTenant || !String(suppliedTenant).trim()) {
