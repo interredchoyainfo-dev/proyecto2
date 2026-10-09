@@ -717,6 +717,24 @@ app.delete(['/api/negocios/:negocioId/espacios/:id', '/api/espacios/:id'], (req,
   res.json({ success: true, message: 'Espacio eliminado.' });
 });
 
+function isValidIsoDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function isValidTimeRange(startTime, endTime) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) &&
+    /^([01]\d|2[0-3]):[0-5]\d$/.test(endTime) &&
+    startTime < endTime;
+}
+
+function isReasonableDateRange(startDate, endDate) {
+  if (!isValidIsoDate(startDate) || !isValidIsoDate(endDate) || startDate > endDate) return false;
+  const days = (Date.parse(`${endDate}T12:00:00Z`) - Date.parse(`${startDate}T12:00:00Z`)) / 86400000;
+  return days <= 366 * 2;
+}
+
 function findFixedTurnConflict(tenantId, espacioId, date, startTime, endTime, excludeId = null) {
   return db.prepare(`
     SELECT id, clientName, startTime, endTime FROM turnos_fijos
@@ -956,11 +974,11 @@ app.post(['/api/negocios/:negocioId/turnos-fijos', '/api/turnos-fijos'], (req, r
   const endDate = String(t.endDate || '');
   const startTime = String(t.startTime || '');
   const endTime = String(t.endTime || '');
+  const amount = t.amount === undefined || t.amount === '' ? 0 : Number(t.amount);
   if (!espacioId || !clientName || !Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6 ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) ||
-      startDate > endDate || !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) ||
-      !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime) || startTime >= endTime) {
-    return res.status(400).json({ success: false, code: 'INVALID_FIXED_TURN', message: 'Revisá cliente, día, fechas y franja horaria del turno fijo.' });
+      !isReasonableDateRange(startDate, endDate) || !isValidTimeRange(startTime, endTime) ||
+      !Number.isFinite(amount) || amount < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_FIXED_TURN', message: 'Revisá cliente, día, fechas válidas (máximo 2 años), horario y precio no negativo.' });
   }
   const space = db.prepare('SELECT id FROM espacios WHERE id = ? AND negocioId = ? AND isActive = 1').get(espacioId, tenantId);
   if (!space) return res.status(400).json({ success: false, code: 'ESPACIO_NO_DISPONIBLE', message: 'El espacio no existe o está inactivo.' });
@@ -986,7 +1004,7 @@ app.post(['/api/negocios/:negocioId/turnos-fijos', '/api/turnos-fijos'], (req, r
   db.prepare(`INSERT INTO turnos_fijos (id, negocioId, espacioId, clientName, clientPhone, dayOfWeek, startDate, endDate, startTime, endTime, amount, notes, activo, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(
       id, tenantId, espacioId, clientName, String(t.clientPhone || ''), dayOfWeek, startDate, endDate,
-      startTime, endTime, Math.max(0, Number(t.amount || 0)), String(t.notes || ''), now, now
+      startTime, endTime, amount, String(t.notes || ''), now, now
     );
   res.status(201).json(db.prepare('SELECT * FROM turnos_fijos WHERE id = ? AND negocioId = ?').get(id, tenantId));
 });
@@ -1004,12 +1022,34 @@ app.put(['/api/negocios/:negocioId/turnos-fijos/:id', '/api/turnos-fijos/:id'], 
   const startTime = String(t.startTime ?? cur.startTime);
   const endTime = String(t.endTime ?? cur.endTime);
   const dayOfWeek = Number(t.dayOfWeek ?? cur.dayOfWeek);
-  if (!clientName || dayOfWeek < 0 || dayOfWeek > 6 || !Number.isInteger(dayOfWeek) || startDate > endDate || startTime >= endTime) {
-    return res.status(400).json({ success: false, code: 'INVALID_FIXED_TURN', message: 'Datos del turno fijo inválidos.' });
+  const amount = t.amount !== undefined ? Number(t.amount) : cur.amount;
+  const espacioId = String(t.espacioId ?? cur.espacioId);
+  if (!clientName || dayOfWeek < 0 || dayOfWeek > 6 || !Number.isInteger(dayOfWeek) ||
+      !isReasonableDateRange(startDate, endDate) || !isValidTimeRange(startTime, endTime) ||
+      !Number.isFinite(amount) || amount < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_FIXED_TURN', message: 'Datos inválidos: revisá cliente, día, fechas, horario y precio.' });
   }
-  db.prepare(`UPDATE turnos_fijos SET clientName = ?, clientPhone = ?, dayOfWeek = ?, startDate = ?, endDate = ?, startTime = ?, endTime = ?, amount = ?, notes = ?, activo = ?, updatedAt = ? WHERE id = ? AND negocioId = ?`)
-    .run(clientName, String(t.clientPhone ?? cur.clientPhone), dayOfWeek, startDate, endDate, startTime, endTime,
-      t.amount !== undefined ? Math.max(0, Number(t.amount)) : cur.amount, String(t.notes ?? cur.notes), active, new Date().toISOString(), id, tenantId);
+  const space = db.prepare('SELECT id FROM espacios WHERE id = ? AND negocioId = ? AND isActive = 1').get(espacioId, tenantId);
+  if (!space) return res.status(400).json({ success: false, code: 'ESPACIO_NO_DISPONIBLE', message: 'El espacio no existe o está inactivo.' });
+
+  if (active) {
+    const occurrence = new Date(`${startDate}T12:00:00.000Z`);
+    const last = new Date(`${endDate}T12:00:00.000Z`);
+    while (occurrence.getUTCDay() !== dayOfWeek && occurrence <= last) occurrence.setUTCDate(occurrence.getUTCDate() + 1);
+    for (let d = new Date(occurrence); d <= last; d.setUTCDate(d.getUTCDate() + 7)) {
+      const date = d.toISOString().slice(0, 10);
+      const booked = db.prepare(`SELECT clientName, startTime, endTime FROM reservas
+        WHERE negocioId = ? AND espacioId = ? AND date = ? AND estado <> 'cancelada'
+          AND startTime < ? AND endTime > ? LIMIT 1`).get(tenantId, espacioId, date, endTime, startTime);
+      if (booked) return res.status(409).json({ success: false, code: 'FIXED_TURN_CONFLICT', message: `El ${date} ya existe una reserva de ${booked.startTime} a ${booked.endTime}.` });
+      const fixed = findFixedTurnConflict(tenantId, espacioId, date, startTime, endTime, id);
+      if (fixed) return res.status(409).json({ success: false, code: 'FIXED_TURN_CONFLICT', message: `Se cruza con el turno fijo de ${fixed.clientName} de ${fixed.startTime} a ${fixed.endTime}.` });
+    }
+  }
+
+  db.prepare(`UPDATE turnos_fijos SET espacioId = ?, clientName = ?, clientPhone = ?, dayOfWeek = ?, startDate = ?, endDate = ?, startTime = ?, endTime = ?, amount = ?, notes = ?, activo = ?, updatedAt = ? WHERE id = ? AND negocioId = ?`)
+    .run(espacioId, clientName, String(t.clientPhone ?? cur.clientPhone), dayOfWeek, startDate, endDate, startTime, endTime,
+      amount, String(t.notes ?? cur.notes), active, new Date().toISOString(), id, tenantId);
   res.json(db.prepare('SELECT * FROM turnos_fijos WHERE id = ? AND negocioId = ?').get(id, tenantId));
 });
 
