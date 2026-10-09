@@ -1351,8 +1351,8 @@ app.get(['/api/negocios/:negocioId/caja/historial', '/api/caja/historial'], (req
 // Apertura de caja transaccional
 app.post(['/api/negocios/:negocioId/caja/abrir', '/api/caja/abrir'], (req, res) => {
   const tenantId = resolveTenantId(req);
-  const { openingAmount, openedBy } = req.body;
-  const initial = Number(openingAmount || 0);
+  const { openingAmount, openedBy } = req.body || {};
+  const initial = Number(openingAmount ?? 0);
 
   if (!Number.isFinite(initial) || initial < 0) {
     return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'Monto inicial inválido.' });
@@ -1461,7 +1461,7 @@ app.post(['/api/negocios/:negocioId/caja/cerrar', '/api/caja/cerrar'], (req, res
 // Movimiento manual en caja
 app.post(['/api/negocios/:negocioId/caja/movimientos', '/api/caja/movimientos'], (req, res) => {
   const tenantId = resolveTenantId(req);
-  const { type, amount, method, description, categoria } = req.body;
+  const { type, amount, method, description, categoria } = req.body || {};
   const numAmount = Number(amount);
 
   if (!Number.isFinite(numAmount) || numAmount <= 0) {
@@ -1473,7 +1473,7 @@ app.post(['/api/negocios/:negocioId/caja/movimientos', '/api/caja/movimientos'],
   if (!['ingreso', 'egreso'].includes(type)) {
     return res.status(400).json({ success: false, code: 'INVALID_TYPE', message: 'Tipo debe ser ingreso o egreso.' });
   }
-  if (!description || !description.trim()) {
+  if (typeof description !== 'string' || !description.trim()) {
     return res.status(400).json({ success: false, code: 'MISSING_DESC', message: 'La descripción es obligatoria.' });
   }
 
