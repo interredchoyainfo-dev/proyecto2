@@ -3,6 +3,7 @@ import { useStore } from '../../store/useStore';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { Icon } from '../ui/Icon';
 import { ReservationModal } from './ReservationModal';
+import { FixedTurnos } from './FixedTurnos';
 import { format, parseISO, isSameDay, startOfWeek, addDays, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -18,6 +19,7 @@ export function Reservations() {
   const reservations = useStore((s) => s.reservations);
   const allEspacios = useEspaciosStore((s) => s.espacios);
   const [modalOpen, setModalOpen] = useState(false);
+  const [showFixedTurnos, setShowFixedTurnos] = useState(false);
   const [selectedRes, setSelectedRes] = useState<typeof reservations[0] | null>(null);
   const [mode, setMode] = useState<CalendarMode>('day');
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -58,14 +60,25 @@ export function Reservations() {
           <h1 className="text-2xl font-bold">Reservas y Turnos</h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm">Calendario interactivo de reservas</p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors"
-        >
-          <Icon name="add" />
-          Nueva Reserva
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowFixedTurnos((v) => !v)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-600 text-emerald-700 dark:text-emerald-400 font-medium transition-colors"
+          >
+            <Icon name="event_repeat" />
+            {showFixedTurnos ? 'Ocultar turnos fijos' : 'Turnos fijos'}
+          </button>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors"
+          >
+            <Icon name="add" />
+            Nueva Reserva
+          </button>
+        </div>
       </div>
+
+      {showFixedTurnos && <FixedTurnos />}
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
