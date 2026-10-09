@@ -235,3 +235,18 @@ npm run server
 Al abrir la app, `DbSync` baja un snapshot desde `/api/sync` y cada 5s refresca.
 Los cambios de pedidos, mesas y reservas se envían a la API automáticamente.
 Si la API no está, la app sigue con datos locales (IndexedDB).
+
+## Producción: API, SuperAdmin y seguridad
+
+La aplicación web (Vite/Vercel) y la API Express con SQLite son servicios distintos. **No configures la API como `localhost` en producción**: ese nombre apuntaría al dispositivo del visitante. En el entorno de compilación de Vercel definí `VITE_API_URL` con la URL pública del backend persistente, incluyendo `/api` (por ejemplo, `https://api.tu-dominio.com/api`). Si falta esta variable, el login muestra un aviso de configuración en lugar de informar credenciales incorrectas.
+
+En el entorno privado del backend configurá:
+
+- `JWT_SECRET`: secreto largo, aleatorio y exclusivo de producción.
+- `OWNER_EMAIL`: usuario o correo del propietario para SuperAdmin.
+- `OWNER_PASSWORD`: contraseña del propietario.
+- `OWNER_PIN`: PIN opcional del propietario para el acceso SuperAdmin por PIN.
+
+No pongas estas credenciales en variables `VITE_*`, no las guardes en Git y no reutilices contraseñas de demostración. El servidor rechaza el acceso SuperAdmin si las credenciales privadas no están configuradas. Las operaciones de administración de negocios requieren un token SuperAdmin válido.
+
+**Persistencia:** no alojes SQLite en un filesystem efímero de funciones serverless. El backend debe ejecutarse en un servicio que conserve el archivo SQLite o migrarse a una base de datos administrada persistente. La base de datos existente no debe borrarse para aplicar estos cambios.
