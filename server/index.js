@@ -779,6 +779,95 @@ const rowReserva = (r) =>
     updatedAt: r.updatedAt,
   };
 
+
+function normalizeWhatsAppRecipient(value) {
+  const digits = String(value || '').replace(/\\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('00')) return digits.slice(2);
+  return digits.startsWith('54') ? digits : `54${digits.replace(/^0+/, '')}`;
+}
+
+function formatReservationCompletionMessage({ business, reservation, space, client }) {
+  const money = (value) => `${Number(value || 0).toLocaleString('es-AR')}`;
+  return [
+    `✅ RESERVA FINALIZADA — ${business.nombre || business.id}`,
+    `Negocio: ${business.nombre || business.id} (${business.id})`,
+    `Reserva: ${reservation.id}`,
+    `Estado: ${reservation.estado}`,
+    `Cliente: ${client?.name || client?.nombre || reservation.clientName || 'No informado'}`,
+    `Teléfono: ${client?.phone || client?.telefono || reservation.clientPhone || 'No informado'}`,
+    `Email: ${client?.email || 'No informado'}`,
+    `Espacio: ${space?.name || space?.nombre || reservation.espacioId}`,
+    `Fecha: ${reservation.date}`,
+    `Horario: ${reservation.startTime} a ${reservation.endTime}`,
+    `Personas: ${reservation.personas ?? 'No informado'}`,
+    `Importe total: ${money(reservation.amount)}`,
+    `Pagado / seña: ${money(reservation.paidAmount ?? reservation.senaPagada)}`,
+    `Saldo pendiente: ${money(reservation.saldoPendiente ?? Math.max(0, Number(reservation.amount || 0) - Number(reservation.paidAmount ?? reservation.senaPagada ?? 0)))}`,
+    `Estado de pago: ${reservation.paymentStatus || 'pendiente'}`,
+    `Medio de pago: ${reservation.paymentMethod || 'No informado'}`,
+    `Observaciones: ${reservation.notes || 'Sin observaciones'}`,
+    `Creada: ${reservation.createdAt || 'No informado'}`,
+  ].join('\\n');
+}
+
+async function dispatchReservationWhatsApp(notificationId) {
+  const item = db.prepare('SELECT * FROM reserva_notificaciones WHERE id = ?').get(notificationId);
+  if (!item || item.estado === 'enviada') return item;
+
+  const token = process.env.WA_ACCESS_TOKEN;
+  const phoneNumberId = process.env.WA_PHONE_NUMBER_ID;
+  if (!token || !phoneNumberId) {
+    db.prepare(`
+      UPDATE reserva_notificaciones SET estado = 'pendiente_config',
+        ultimoError = ?, updatedAt = ? WHERE id = ?
+    `).run('Falta configurar WA_ACCESS_TOKEN y WA_PHONE_NUMBER_ID en el servidor.', new Date().toISOString(), notificationId);
+    return db.prepare('SELECT * FROM reserva_notificaciones WHERE id = ?').get(notificationId);
+  }
+
+  if (!item.destino) {
+    db.prepare(`
+      UPDATE reserva_notificaciones SET estado = 'sin_destino',
+        ultimoError = ?, updatedAt = ? WHERE id = ?
+    `).run('El negocio no tiene un número de WhatsApp configurado.', new Date().toISOString(), notificationId);
+    return db.prepare('SELECT * FROM reserva_notificaciones WHERE id = ?').get(notificationId);
+  }
+
+  const version = process.env.WA_GRAPH_API_VERSION || 'v22.0';
+  try {
+    const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: item.destino,
+        type: 'text',
+        text: { preview_url: false, body: item.mensaje },
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const reason = data?.error?.message || `WhatsApp API respondió HTTP ${response.status}`;
+      db.prepare(`
+        UPDATE reserva_notificaciones SET estado = 'fallida', intentos = intentos + 1,
+          ultimoError = ?, updatedAt = ? WHERE id = ?
+      `).run(String(reason).slice(0, 1000), new Date().toISOString(), notificationId);
+    } else {
+      db.prepare(`
+        UPDATE reserva_notificaciones SET estado = 'enviada', proveedorMensajeId = ?,
+          intentos = intentos + 1, ultimoError = NULL, sentAt = ?, updatedAt = ? WHERE id = ?
+      `).run(data?.messages?.[0]?.id || null, new Date().toISOString(), new Date().toISOString(), notificationId);
+    }
+  } catch (error) {
+    db.prepare(`
+      UPDATE reserva_notificaciones SET estado = 'fallida', intentos = intentos + 1,
+        ultimoError = ?, updatedAt = ? WHERE id = ?
+    `).run(String(error?.message || 'Error de conexión con WhatsApp').slice(0, 1000), new Date().toISOString(), notificationId);
+  }
+  return db.prepare('SELECT * FROM reserva_notificaciones WHERE id = ?').get(notificationId);
+}
+
 app.get(['/api/negocios/:negocioId/reservas', '/api/reservas'], (req, res) => {
   const tenantId = resolveTenantId(req);
   const rows = db.prepare('SELECT * FROM reservas WHERE negocioId = ? ORDER BY date, startTime').all(tenantId);
@@ -948,7 +1037,41 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, re
   );
 
   const updated = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(id, tenantId);
-  res.json(rowReserva(updated));
+  let notification = null;
+
+  // Crear un único aviso cuando el estado cambia por primera vez a completada.
+  if (cur.estado !== 'completada' && updated.estado === 'completada') {
+    const business = db.prepare('SELECT id, nombre, whatsapp FROM negocios WHERE id = ?').get(tenantId);
+    const space = db.prepare('SELECT name FROM espacios WHERE id = ? AND negocioId = ?').get(updated.espacioId, tenantId);
+    const client = updated.clientId
+      ? db.prepare('SELECT * FROM clientes WHERE id = ? AND negocioId = ?').get(updated.clientId, tenantId)
+      : null;
+    const destination = normalizeWhatsAppRecipient(business?.whatsapp);
+    const message = formatReservationCompletionMessage({ business: business || { id: tenantId }, reservation: updated, space, client });
+    const eventKey = `${tenantId}:${id}:completada`;
+    const existingNotice = db.prepare('SELECT * FROM reserva_notificaciones WHERE eventKey = ?').get(eventKey);
+    if (!existingNotice) {
+      const notificationId = `wa-${crypto.randomUUID()}`;
+      db.prepare(`
+        INSERT INTO reserva_notificaciones
+          (id, negocioId, reservaId, eventKey, destino, mensaje, estado, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        notificationId, tenantId, id, eventKey, destination, message,
+        destination ? 'pendiente' : 'sin_destino', now, now
+      );
+      notification = await dispatchReservationWhatsApp(notificationId);
+    } else {
+      notification = existingNotice;
+    }
+  }
+
+  res.json({ ...rowReserva(updated), notificacionWhatsApp: notification ? {
+    estado: notification.estado,
+    destino: notification.destino,
+    error: notification.ultimoError || null,
+    enviadoEn: notification.sentAt || null,
+  } : undefined });
 });
 
 app.delete(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, res) => {
