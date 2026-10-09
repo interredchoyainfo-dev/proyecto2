@@ -327,7 +327,7 @@ try {
   });
   assert.equal(overlappingFixedTurn.status, 409, 'overlapping recurring fixed turns must be rejected');
 
-  // Finalizar una reserva crea un aviso WhatsApp dirigido al número de configuración del negocio.
+  // Finalizar una reserva solo actualiza su estado; WhatsApp se abre desde el navegador y requiere envío manual.
   const reservationResponse = await fetch(`${baseUrl}/api/negocios/giovanni/reservas`, {
     method: 'POST',
     headers: {
@@ -365,11 +365,10 @@ try {
   assert.equal(completeReservationResponse.status, 200, 'reservation must be completed');
   const completedReservation = await completeReservationResponse.json();
   assert.equal(completedReservation.estado, 'completada');
-  assert.equal(completedReservation.notificacionWhatsApp?.estado, 'pendiente_config', 'notification must be queued and clearly report missing WhatsApp API credentials');
-  assert.ok(completedReservation.notificacionWhatsApp?.destino.endsWith('3855374835'), 'notification recipient must come from this tenant configuration');
+  assert.equal(completedReservation.notificacionWhatsApp, undefined, 'completing a reservation must not send or queue an automatic WhatsApp message');
 
 
-  console.log('API smoke tests passed: auth, tenant isolation, password leak protection, cash session persistence, fixed-turn validation/conflicts, and reservation WhatsApp outbox.');
+  console.log('API smoke tests passed: auth, tenant isolation, password leak protection, cash session persistence, fixed-turn validation/conflicts, and manual reservation completion without automatic WhatsApp sending.');
 } finally {
   child.kill('SIGTERM');
   await new Promise((resolve) => {
