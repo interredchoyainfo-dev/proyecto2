@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
+import { api } from '../../lib/api';
 import { useStore } from '../../store/useStore';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { Icon } from '../ui/Icon';
@@ -17,6 +19,9 @@ const paymentBadge: Record<string, string> = {
 
 export function Reservations() {
   const reservations = useStore((s) => s.reservations);
+  const { negocioId } = useParams<{ negocioId: string }>();
+  const [completionNotice, setCompletionNotice] = useState('');
+  const [completionError, setCompletionError] = useState('');
   const allEspacios = useEspaciosStore((s) => s.espacios);
   const [modalOpen, setModalOpen] = useState(false);
   const [showFixedTurnos, setShowFixedTurnos] = useState(false);
@@ -52,6 +57,27 @@ export function Reservations() {
   const historial = filtered.filter((r) => isPast(r));
 
   const courtName = (id: string) => allEspacios.find((c) => c.id === id)?.name ?? id;
+
+  const finalizeReservation = async () => {
+    if (!selectedRes || selectedRes.estado === 'completada' || selectedRes.estado === 'cancelada') return;
+    setCompletionNotice('');
+    setCompletionError('');
+    try {
+      const updated = await api.updateReserva(negocioId || selectedRes.negocioId || 'giovanni', selectedRes.id, { estado: 'completada' });
+      useStore.setState((state) => ({
+        reservations: state.reservations.map((r) => r.id === selectedRes.id ? { ...r, ...updated } : r),
+      }));
+      setSelectedRes((current) => current ? { ...current, ...updated } : current);
+      const notice = updated?.notificacionWhatsApp;
+      if (notice?.estado === 'enviada') setCompletionNotice('Reserva finalizada. WhatsApp enviado al número configurado para este negocio.');
+      else if (notice?.estado === 'pendiente_config') setCompletionNotice('Reserva finalizada. Falta configurar WA_ACCESS_TOKEN y WA_PHONE_NUMBER_ID en el servidor para el envío automático.');
+      else if (notice?.estado === 'sin_destino') setCompletionNotice('Reserva finalizada, pero este negocio no tiene un WhatsApp configurado en Configuración.');
+      else if (notice?.estado === 'fallida') setCompletionError(`Reserva finalizada, pero WhatsApp no pudo enviarse: ${notice.error || 'error de proveedor'}.`);
+      else setCompletionNotice('Reserva finalizada. Se registró el aviso de WhatsApp.');
+    } catch (error) {
+      setCompletionError(error instanceof Error ? error.message : 'No se pudo finalizar la reserva.');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -251,7 +277,18 @@ export function Reservations() {
               )}
             </div>
             <div className="flex flex-col gap-2 pt-2">
-              <a
+              {selectedRes.estado !== 'completada' && selectedRes.estado !== 'cancelada' && (
+                <button
+                  type="button"
+                  onClick={finalizeReservation}
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-center"
+                >
+                  Marcar como finalizada y avisar al negocio
+                </button>
+              )}
+              {completionNotice && <p role="status" className="text-sm text-emerald-600 dark:text-emerald-400">{completionNotice}</p>}
+              {completionError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{completionError}</p>}
+<a
                 href={`https://wa.me/${selectedRes.clientPhone.replace(/\D/g, '').replace(/^0/, '54')}?text=${encodeURIComponent(
                   `Hola ${selectedRes.clientName}! Te escribimos de Complejo Giovanni por tu reserva del ${selectedRes.date} de ${selectedRes.startTime} a ${selectedRes.endTime} en ${courtName(selectedRes.espacioId || (selectedRes as any).courtId)}. ¿Confirmás asistencia?`
                 )}`}
