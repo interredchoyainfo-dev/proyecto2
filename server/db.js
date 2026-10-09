@@ -12,7 +12,8 @@ const migrationsDir = path.join(__dirname, 'migrations');
 if (!fs.existsSync(migrationsDir)) fs.mkdirSync(migrationsDir, { recursive: true });
 
 // Archivo principal de base de datos multi-tenant unificada
-const dbPath = path.join(dataDir, 'app.sqlite');
+const dbPath = process.env.DATABASE_PATH || path.join(dataDir, 'app.sqlite');
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 export const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -76,6 +77,8 @@ export function applyMigrations() {
  * Si existen datos legados en server/data/giovanni.sqlite, los importa a app.sqlite
  */
 function migrateLegacyGiovanniData() {
+  // En pruebas aisladas nunca importar el archivo de datos local del desarrollador.
+  if (process.env.DATABASE_PATH) return;
   const legacyGiovanniPath = path.join(dataDir, 'giovanni.sqlite');
   if (!fs.existsSync(legacyGiovanniPath)) return;
 
@@ -160,14 +163,8 @@ export function seedDefaultTenants() {
   const count = db.prepare('SELECT COUNT(*) as c FROM negocios').get().c;
   const now = new Date().toISOString();
 
-  // SuperAdmin global
-  const superAdminExists = db.prepare("SELECT id FROM usuarios WHERE email = 'super' OR email = 'admin' AND negocioId IS NULL").get();
-  if (!superAdminExists) {
-    db.prepare(`
-      INSERT INTO usuarios (id, negocioId, email, nombre, passwordHash, pinHash, rol, isActive, createdAt, updatedAt)
-      VALUES (?, NULL, 'admin', 'Super Administrador', ?, ?, 'superadmin', 1, ?, ?)
-    `).run('u-superadmin', hashPassword('Giolezana19'), hashPassword('1919'), now, now);
-  }
+  // SuperAdmin se autentica con OWNER_EMAIL/OWNER_PASSWORD/OWNER_PIN del servidor.
+  // No crear una cuenta maestra con credenciales fijas en la base de datos.
 
   if (count === 0) {
     console.log('[Seed] Creando negocios iniciales del SaaS...');
