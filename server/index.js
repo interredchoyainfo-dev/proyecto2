@@ -842,8 +842,17 @@ async function dispatchReservationWhatsApp(notificationId) {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to: item.destino,
-        type: 'text',
-        text: { preview_url: false, body: item.mensaje },
+        ...(process.env.WA_TEMPLATE_NAME ? {
+          type: 'template',
+          template: {
+            name: process.env.WA_TEMPLATE_NAME,
+            language: { code: process.env.WA_TEMPLATE_LANGUAGE || 'es_AR' },
+            components: [{ type: 'body', parameters: [{ type: 'text', text: item.mensaje.slice(0, 1024) }] }],
+          },
+        } : {
+          type: 'text',
+          text: { preview_url: false, body: item.mensaje },
+        }),
       }),
     });
     const data = await response.json().catch(() => ({}));
