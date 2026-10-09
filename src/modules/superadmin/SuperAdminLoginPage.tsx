@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { API_BASE_URL } from '../../lib/api';
 import { Icon } from '../../components/ui/Icon';
 
 export default function SuperAdminLoginPage() {
@@ -22,7 +23,7 @@ export default function SuperAdminLoginPage() {
     if (ok) {
       navigate('/superadmin');
     } else {
-      setError('Credenciales incorrectas. Acceso restringido al propietario.');
+      setError(API_BASE_URL ? 'Credenciales incorrectas. Acceso restringido al propietario.' : 'El servidor no está configurado. Definí VITE_API_URL en el despliegue.');
     }
   };
 
