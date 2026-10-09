@@ -133,6 +133,28 @@ try {
     'tenant token must not access another tenant operational API'
   );
 
+  // No debe poder falsearse el negocio de la URL enviando una cabecera de otro tenant.
+  const spoofedTenantHeader = await fetch(`${baseUrl}/api/negocios/demo/sync`, {
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'x-negocio-id': 'giovanni',
+    },
+  });
+  assert.equal(
+    spoofedTenantHeader.status,
+    403,
+    'tenant authorization must follow the URL tenant even when x-negocio-id is spoofed'
+  );
+
+  const missingTenantSelector = await fetch(`${baseUrl}/api/sync`, {
+    headers: { authorization: `Bearer ${tenantLogin.token}` },
+  });
+  assert.equal(
+    missingTenantSelector.status,
+    400,
+    'legacy operational aliases must reject requests without an explicit tenant selector'
+  );
+
   const pinResponse = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
