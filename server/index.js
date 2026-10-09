@@ -24,10 +24,22 @@ function safeEqual(a, b) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-// CORS seguro
+// CORS con lista explícita de orígenes. En producción, definir CORS_ORIGINS
+// con el dominio exacto del frontend (separado por comas).
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000,http://localhost:3001')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      // Las llamadas sin Origin (p. ej. health checks internos o clientes nativos)
+      // no dependen de CORS; los navegadores solo reciben permiso para la lista explícita.
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      return callback(null, false);
+    },
     credentials: true,
   })
 );
