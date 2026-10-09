@@ -1076,70 +1076,70 @@ app.get(['/api/negocios/:negocioId/caja/sesion', '/api/caja/sesion'], (req, res)
 
 app.put(['/api/negocios/:negocioId/caja/sesion', '/api/caja/sesion'], (req, res) => {
   const tenantId = resolveTenantId(req);
-  const s = req.body;
-  if (!s) return res.status(400).json({ success: false, message: 'Datos requeridos' });
-
-  const id = s.id || `ses-${crypto.randomUUID().slice(0, 8)}`;
+  const s = req.body || {};
   const now = new Date().toISOString();
+  const id = String(s.id || '').trim();
+  const status = s.status || 'abierta';
+  const openingAmount = Number(s.openingAmount ?? 0);
 
-  // Los IDs son globalmente únicos: nunca permitir que un tenant reutilice
-  // el ID de una sesión de caja perteneciente a otro negocio.
-  const existingSession = db.prepare(
-    'SELECT negocioId FROM caja_sesiones WHERE id = ?'
-  ).get(id);
-  if (existingSession && String(existingSession.negocioId).toLowerCase() !== tenantId.toLowerCase()) {
-    return res.status(409).json({
-      success: false,
-      code: 'CASH_SESSION_TENANT_CONFLICT',
-      message: 'La sesión de caja pertenece a otro negocio.',
-    });
+  if (!id || !['abierta', 'cerrada'].includes(status)) {
+    return res.status(400).json({ success: false, code: 'INVALID_CASH_SESSION', message: 'Sesión o estado de caja inválido.' });
+  }
+  if (!Number.isFinite(openingAmount) || openingAmount < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'El monto de apertura debe ser un número válido no negativo.' });
   }
 
-  db.prepare(`
-    INSERT INTO caja_sesiones (id, negocioId, status, openedAt, openingAmount, closedAt, closingAmount, expectedAmount, openedBy, closedBy, totalVentas, totalIngresos, totalEgresos, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      status = excluded.status,
-      openedAt = excluded.openedAt,
-      openingAmount = excluded.openingAmount,
-      closedAt = excluded.closedAt,
-      closingAmount = excluded.closingAmount,
-      expectedAmount = excluded.expectedAmount,
-      openedBy = excluded.openedBy,
-      closedBy = excluded.closedBy,
-      totalVentas = excluded.totalVentas,
-      totalIngresos = excluded.totalIngresos,
-      totalEgresos = excluded.totalEgresos,
-      updatedAt = excluded.updatedAt
-  `).run(
-    id,
-    tenantId,
-    s.status || 'abierta',
-    s.openedAt || now,
-    Number(s.openingAmount || 0),
-    s.closedAt || null,
-    s.closingAmount !== undefined ? Number(s.closingAmount) : null,
-    s.expectedAmount !== undefined ? Number(s.expectedAmount) : null,
-    s.openedBy || 'Administrador',
-    s.closedBy || null,
-    Number(s.totalVentas || 0),
-    Number(s.totalIngresos || 0),
-    Number(s.totalEgresos || 0),
-    now,
-    now
-  );
-
-  const savedSession = db.prepare(
-    'SELECT * FROM caja_sesiones WHERE id = ? AND negocioId = ?'
-  ).get(id, tenantId);
-  if (!savedSession) {
-    return res.status(409).json({
-      success: false,
-      code: 'CASH_SESSION_TENANT_CONFLICT',
-      message: 'No se pudo guardar la sesión en el negocio solicitado.',
-    });
+  const existing = db.prepare('SELECT * FROM caja_sesiones WHERE id = ?').get(id);
+  if (existing && String(existing.negocioId).toLowerCase() !== tenantId.toLowerCase()) {
+    return res.status(409).json({ success: false, code: 'CASH_SESSION_TENANT_CONFLICT', message: 'La sesión de caja pertenece a otro negocio.' });
   }
-  res.json(savedSession);
+
+  // La sesión se crea una sola vez. No se permite reabrir una caja cerrada
+  // ni cambiar sus datos contables mediante una actualización genérica.
+  if (!existing) {
+    if (status !== 'abierta') {
+      return res.status(400).json({ success: false, code: 'INVALID_CASH_SESSION_TRANSITION', message: 'Una sesión nueva debe abrirse antes de cerrarse.' });
+    }
+    const active = db.prepare("SELECT id FROM caja_sesiones WHERE negocioId = ? AND status = 'abierta' LIMIT 1").get(tenantId);
+    if (active) {
+      return res.status(409).json({ success: false, code: 'CAJA_YA_ABIERTA', message: 'Ya existe una caja abierta para este negocio.' });
+    }
+    db.prepare(`
+      INSERT INTO caja_sesiones (id, negocioId, status, openedAt, openingAmount, openedBy, totalVentas, totalIngresos, totalEgresos, createdAt, updatedAt)
+      VALUES (?, ?, 'abierta', ?, ?, ?, 0, 0, 0, ?, ?)
+    `).run(id, tenantId, s.openedAt || now, openingAmount, req.user?.nombre || String(s.openedBy || 'Administrador').slice(0, 120), now, now);
+    return res.status(200).json(db.prepare('SELECT * FROM caja_sesiones WHERE id = ? AND negocioId = ?').get(id, tenantId));
+  }
+
+  if (existing.status !== 'abierta') {
+    return res.status(409).json({ success: false, code: 'CAJA_YA_CERRADA', message: 'La sesión ya está cerrada y no puede modificarse.' });
+  }
+  if (status !== 'cerrada') {
+    return res.status(409).json({ success: false, code: 'CASH_SESSION_IMMUTABLE', message: 'La sesión abierta no se puede sobrescribir; usá el cierre de caja.' });
+  }
+
+  const closingAmount = Number(s.closingAmount);
+  if (!Number.isFinite(closingAmount) || closingAmount < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'El monto contado debe ser un número válido no negativo.' });
+  }
+
+  const closeTx = db.transaction(() => {
+    const totals = db.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN type = 'ingreso' AND method = 'efectivo' THEN amount ELSE 0 END), 0) AS ingresosEfectivo,
+        COALESCE(SUM(CASE WHEN type = 'egreso' AND method = 'efectivo' THEN amount ELSE 0 END), 0) AS egresosEfectivo
+      FROM caja_movimientos WHERE negocioId = ? AND sessionId = ?
+    `).get(tenantId, id);
+    const expectedAmount = existing.openingAmount + totals.ingresosEfectivo - totals.egresosEfectivo;
+    db.prepare(`
+      UPDATE caja_sesiones SET status = 'cerrada', closedAt = ?, closingAmount = ?,
+        expectedAmount = ?, differenceAmount = ?, closedBy = ?, updatedAt = ?
+      WHERE id = ? AND negocioId = ? AND status = 'abierta'
+    `).run(now, closingAmount, expectedAmount, closingAmount - expectedAmount,
+      req.user?.nombre || String(s.closedBy || 'Administrador').slice(0, 120), now, id, tenantId);
+  });
+  closeTx();
+  res.json(db.prepare('SELECT * FROM caja_sesiones WHERE id = ? AND negocioId = ?').get(id, tenantId));
 });
 
 // Movimientos de la sesión activa
@@ -1218,8 +1218,11 @@ app.post(['/api/negocios/:negocioId/caja/abrir', '/api/caja/abrir'], (req, res) 
 // Cierre de caja transaccional con arqueo físico vs electrónico
 app.post(['/api/negocios/:negocioId/caja/cerrar', '/api/caja/cerrar'], (req, res) => {
   const tenantId = resolveTenantId(req);
-  const { closingAmount, closedBy } = req.body;
-  const physicalCounted = Number(closingAmount ?? 0);
+  const { closingAmount, closedBy } = req.body || {};
+  const physicalCounted = Number(closingAmount);
+  if (!Number.isFinite(physicalCounted) || physicalCounted < 0) {
+    return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'El monto contado debe ser un número válido no negativo.' });
+  }
 
   const closeTx = db.transaction(() => {
     const session = db.prepare(`
@@ -1288,6 +1291,9 @@ app.post(['/api/negocios/:negocioId/caja/movimientos', '/api/caja/movimientos'],
 
   if (!Number.isFinite(numAmount) || numAmount <= 0) {
     return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'El importe debe ser mayor a cero.' });
+  }
+  if (!['efectivo', 'transferencia', 'mercadopago', 'tarjeta'].includes(method)) {
+    return res.status(400).json({ success: false, code: 'INVALID_METHOD', message: 'Método de pago inválido.' });
   }
   if (!['ingreso', 'egreso'].includes(type)) {
     return res.status(400).json({ success: false, code: 'INVALID_TYPE', message: 'Tipo debe ser ingreso o egreso.' });
