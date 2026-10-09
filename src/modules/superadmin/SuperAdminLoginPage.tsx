@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_BASE_URL } from '../../lib/api';
@@ -9,8 +9,12 @@ export default function SuperAdminLoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, authError } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (authError) setError(authError);
+  }, [authError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,19 +26,20 @@ export default function SuperAdminLoginPage() {
     setLoading(false);
     if (ok) {
       navigate('/superadmin');
-    } else {
-      setError(API_BASE_URL ? 'Credenciales incorrectas. Acceso restringido al propietario.' : 'El servidor no está configurado. Definí VITE_API_URL en el despliegue.');
+    } else if (!authError) {
+      // El contexto publica el detalle real de la API; este texto solo cubre el primer render.
+      setError(API_BASE_URL
+        ? 'No se pudo validar el acceso. Intentá nuevamente y revisá la conexión del servidor.'
+        : 'API no configurada: falta VITE_API_URL en el despliegue de Vercel.');
     }
   };
 
   return (
     <div className="min-h-screen bg-[#0A0A0F] text-white flex items-center justify-center p-4 relative overflow-hidden font-sans">
-      {/* Background radial glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-violet-600/10 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] bg-purple-900/10 rounded-full blur-[120px] pointer-events-none" />
 
       <div className="w-full max-w-md relative z-10">
-        {/* Header */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 via-purple-700 to-indigo-800 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-violet-950/50 ring-1 ring-white/10">
             <Icon name="admin_panel_settings" className="text-white" size={32} />
@@ -44,40 +49,33 @@ export default function SuperAdminLoginPage() {
             Consola Privada
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Acceso SuperAdmin</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Gestión centralizada del sistema
-          </p>
+          <p className="text-slate-400 text-sm mt-1">Gestión centralizada del sistema</p>
         </div>
 
-        {/* Card */}
         <div className="bg-[#121722]/95 backdrop-blur-xl rounded-2xl border border-white/10 p-6 sm:p-8 shadow-2xl space-y-5">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Usuario
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Usuario</label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 autoComplete="username"
-                placeholder="Ingresá tu usuario"
+                placeholder="Ingresá tu usuario o correo"
                 className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Contraseña
-              </label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Contraseña</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                placeholder="••••••••••••"
+                placeholder="Ingresá tu contraseña"
                 className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500 text-sm transition-all"
               />
             </div>
