@@ -655,8 +655,19 @@ app.put(['/api/negocios/:negocioId/espacios/:id', '/api/espacios/:id'], (req, re
 
   const e = req.body;
   const now = new Date().toISOString();
+  const precioHora = e.precioHora !== undefined ? Number(e.precioHora) : cur.precioHora;
   const precioDia = e.precioDia !== undefined ? Number(e.precioDia) : cur.precioDia;
   const precioNoche = e.precioNoche !== undefined ? Number(e.precioNoche) : cur.precioNoche;
+
+  if (![precioHora, precioDia, precioNoche].every((precio) => Number.isFinite(precio) && precio >= 0)) {
+    return res.status(400).json({ success: false, code: 'ESPACIO_INVALID_PRICE', message: 'Los precios deben ser números válidos no negativos.' });
+  }
+
+  const nuevoNombre = String(e.name ?? cur.name).trim();
+  if (!nuevoNombre) return res.status(400).json({ success: false, code: 'ESPACIO_NAME_REQUIRED', message: 'El nombre del espacio es obligatorio.' });
+  const nuevoTipo = String(e.type ?? cur.type).trim() || cur.type;
+  const duplicado = db.prepare('SELECT id FROM espacios WHERE negocioId = ? AND id != ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) AND LOWER(TRIM(type)) = LOWER(TRIM(?)) LIMIT 1').get(tenantId, id, nuevoNombre, nuevoTipo);
+  if (duplicado) return res.status(409).json({ success: false, code: 'ESPACIO_DUPLICATE', message: 'Ya existe un espacio con ese nombre y tipo en este negocio.' });
 
   db.prepare(`
     UPDATE espacios SET
@@ -665,10 +676,10 @@ app.put(['/api/negocios/:negocioId/espacios/:id', '/api/espacios/:id'], (req, re
       isActive = ?, currentReservationId = ?, updatedAt = ?
     WHERE id = ? AND negocioId = ?
   `).run(
-    e.name ?? cur.name,
-    e.type ?? cur.type,
+    nuevoNombre,
+    nuevoTipo,
     e.status ?? cur.status,
-    precioDia,
+    precioHora,
     precioDia,
     precioNoche,
     e.description !== undefined ? e.description : cur.description,
