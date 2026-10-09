@@ -1,6 +1,9 @@
 import crypto from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'complejo-giovanni-super-secret-key-2026';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : crypto.randomBytes(32).toString('hex'));
+if (process.env.NODE_ENV === 'production' && !JWT_SECRET) {
+  throw new Error('Falta JWT_SECRET: configurá un secreto aleatorio en el entorno privado del servidor.');
+}
 
 /**
  * Genera un hash seguro para contraseñas usando salt aleatorio.
