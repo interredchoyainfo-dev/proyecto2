@@ -1078,6 +1078,28 @@ app.put(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], async (r
   } : undefined });
 });
 
+app.post(['/api/negocios/:negocioId/reservas/:id/notificacion-whatsapp/reintentar', '/api/reservas/:id/notificacion-whatsapp/reintentar'], async (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const reservation = db.prepare('SELECT id, estado FROM reservas WHERE id = ? AND negocioId = ?').get(req.params.id, tenantId);
+  if (!reservation) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Reserva no encontrada.' });
+  if (reservation.estado !== 'completada') {
+    return res.status(409).json({ success: false, code: 'RESERVA_NO_FINALIZADA', message: 'Solo se puede enviar el aviso de una reserva finalizada.' });
+  }
+  const eventKey = `${tenantId}:${reservation.id}:completada`;
+  const notice = db.prepare('SELECT * FROM reserva_notificaciones WHERE eventKey = ? AND negocioId = ?').get(eventKey, tenantId);
+  if (!notice) return res.status(404).json({ success: false, code: 'NOTIFICATION_NOT_FOUND', message: 'No hay aviso registrado para esta reserva.' });
+  const result = await dispatchReservationWhatsApp(notice.id);
+  res.json({
+    success: result.estado === 'enviada',
+    notificacionWhatsApp: {
+      estado: result.estado,
+      destino: result.destino,
+      error: result.ultimoError || null,
+      enviadoEn: result.sentAt || null,
+    },
+  });
+});
+
 app.delete(['/api/negocios/:negocioId/reservas/:id', '/api/reservas/:id'], (req, res) => {
   const tenantId = resolveTenantId(req);
   const id = req.params.id;
