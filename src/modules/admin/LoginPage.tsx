@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { API_BASE_URL } from '../../lib/api';
 import { useSuperAdminStore } from '../../store/useSuperAdminStore';
 import { Icon } from '../../components/ui/Icon';
 
@@ -56,9 +57,11 @@ export default function LoginPage() {
       }
     } else {
       setError(
-        mode === 'email'
-          ? `Usuario o contraseña incorrectos para ${tenantName}`
-          : 'PIN incorrecto para este complejo'
+        !API_BASE_URL
+          ? 'El servidor no está configurado. Definí VITE_API_URL en el despliegue.'
+          : mode === 'email'
+            ? `Usuario o contraseña incorrectos para ${tenantName}`
+            : 'PIN incorrecto para este complejo'
       );
     }
   };
