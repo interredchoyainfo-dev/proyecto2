@@ -155,6 +155,50 @@ try {
     'legacy operational aliases must reject requests without an explicit tenant selector'
   );
 
+  const createCashSession = await fetch(`${baseUrl}/api/negocios/giovanni/caja/sesion`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'giovanni',
+    },
+    body: JSON.stringify({
+      id: 'smoke-shared-session-id',
+      status: 'abierta',
+      openingAmount: 100,
+      openedBy: 'smoke-test',
+    }),
+  });
+  assert.equal(createCashSession.status, 200, 'tenant must create/update its own cash session');
+
+  const demoLoginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'admin', password: 'admin', negocioId: 'demo' }),
+  });
+  assert.equal(demoLoginResponse.status, 200, 'demo tenant admin must be able to log in');
+  const demoLogin = await demoLoginResponse.json();
+
+  const crossTenantCashWrite = await fetch(`${baseUrl}/api/negocios/demo/caja/sesion`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${demoLogin.token}`,
+      'content-type': 'application/json',
+      'x-negocio-id': 'demo',
+    },
+    body: JSON.stringify({
+      id: 'smoke-shared-session-id',
+      status: 'cerrada',
+      openingAmount: 999999,
+      openedBy: 'malicious-test',
+    }),
+  });
+  assert.equal(
+    crossTenantCashWrite.status,
+    409,
+    'a tenant must not overwrite a cash session ID owned by another tenant'
+  );
+
   const pinResponse = await fetch(`${baseUrl}/api/auth/pin`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
