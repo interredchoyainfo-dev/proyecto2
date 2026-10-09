@@ -1095,8 +1095,25 @@ app.post(['/api/negocios/:negocioId/reservas/:id/notificacion-whatsapp/reintenta
     return res.status(409).json({ success: false, code: 'RESERVA_NO_FINALIZADA', message: 'Solo se puede enviar el aviso de una reserva finalizada.' });
   }
   const eventKey = `${tenantId}:${reservation.id}:completada`;
-  const notice = db.prepare('SELECT * FROM reserva_notificaciones WHERE eventKey = ? AND negocioId = ?').get(eventKey, tenantId);
-  if (!notice) return res.status(404).json({ success: false, code: 'NOTIFICATION_NOT_FOUND', message: 'No hay aviso registrado para esta reserva.' });
+  let notice = db.prepare('SELECT * FROM reserva_notificaciones WHERE eventKey = ? AND negocioId = ?').get(eventKey, tenantId);
+  if (!notice) {
+    const fullReservation = db.prepare('SELECT * FROM reservas WHERE id = ? AND negocioId = ?').get(reservation.id, tenantId);
+    const business = db.prepare('SELECT id, nombre, whatsapp FROM negocios WHERE id = ?').get(tenantId);
+    const space = db.prepare('SELECT name FROM espacios WHERE id = ? AND negocioId = ?').get(fullReservation.espacioId, tenantId);
+    const client = fullReservation.clientId
+      ? db.prepare('SELECT * FROM clientes WHERE id = ? AND negocioId = ?').get(fullReservation.clientId, tenantId)
+      : null;
+    const destination = normalizeWhatsAppRecipient(business?.whatsapp);
+    const message = formatReservationCompletionMessage({ business: business || { id: tenantId }, reservation: fullReservation, space, client });
+    const now = new Date().toISOString();
+    const notificationId = `wa-${crypto.randomUUID()}`;
+    db.prepare(`
+      INSERT OR IGNORE INTO reserva_notificaciones
+        (id, negocioId, reservaId, eventKey, destino, mensaje, estado, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(notificationId, tenantId, reservation.id, eventKey, destination, message, destination ? 'pendiente' : 'sin_destino', now, now);
+    notice = db.prepare('SELECT * FROM reserva_notificaciones WHERE eventKey = ? AND negocioId = ?').get(eventKey, tenantId);
+  }
   const result = await dispatchReservationWhatsApp(notice.id);
   res.json({
     success: result.estado === 'enviada',
