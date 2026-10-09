@@ -885,6 +885,19 @@ app.put(['/api/negocios/:negocioId/caja/sesion', '/api/caja/sesion'], (req, res)
   const id = s.id || `ses-${crypto.randomUUID().slice(0, 8)}`;
   const now = new Date().toISOString();
 
+  // Los IDs son globalmente únicos: nunca permitir que un tenant reutilice
+  // el ID de una sesión de caja perteneciente a otro negocio.
+  const existingSession = db.prepare(
+    'SELECT negocioId FROM caja_sesiones WHERE id = ?'
+  ).get(id);
+  if (existingSession && String(existingSession.negocioId).toLowerCase() !== tenantId.toLowerCase()) {
+    return res.status(409).json({
+      success: false,
+      code: 'CASH_SESSION_TENANT_CONFLICT',
+      message: 'La sesión de caja pertenece a otro negocio.',
+    });
+  }
+
   db.prepare(`
     INSERT INTO caja_sesiones (id, negocioId, status, openedAt, openingAmount, closedAt, closingAmount, expectedAmount, openedBy, closedBy, totalVentas, totalIngresos, totalEgresos, createdAt, updatedAt)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -919,7 +932,17 @@ app.put(['/api/negocios/:negocioId/caja/sesion', '/api/caja/sesion'], (req, res)
     now
   );
 
-  res.json(db.prepare('SELECT * FROM caja_sesiones WHERE id = ?').get(id));
+  const savedSession = db.prepare(
+    'SELECT * FROM caja_sesiones WHERE id = ? AND negocioId = ?'
+  ).get(id, tenantId);
+  if (!savedSession) {
+    return res.status(409).json({
+      success: false,
+      code: 'CASH_SESSION_TENANT_CONFLICT',
+      message: 'No se pudo guardar la sesión en el negocio solicitado.',
+    });
+  }
+  res.json(savedSession);
 });
 
 // Movimientos de la sesión activa
