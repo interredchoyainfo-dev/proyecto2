@@ -93,7 +93,7 @@ export const api = {
   updateTenant: (id: string, data: any) =>
     request(`/tenants/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }),
   updateBusinessSettings: (negocioId: string, data: any) =>
-    request(`${tenantPath(negocioId)}/configuracion`, { method: 'PUT', body: JSON.stringify(data) }, negocioId),
+    request<{ success: boolean; tenant?: any }>(`${tenantPath(negocioId)}/configuracion`, { method: 'PUT', body: JSON.stringify(data) }, negocioId),
   deleteTenant: (id: string) =>
     request(`/tenants/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   resetTenant: (id: string) =>
