@@ -257,11 +257,15 @@ export const api = {
     return request<any>(`${tenantPath(t)}/pedidos`, { method: 'POST', body: JSON.stringify(data) }, t);
   },
   // Los pedidos del menú público se guardan en SQLite sin abrir las rutas operativas protegidas.
-  createPublicPedido: (negocioId: string, data: any) =>
-    request<any>(`/public/negocios/${encodeURIComponent(negocioId)}/pedidos`, {
+  createPublicPedido: (negocioId: string, data: any) => {
+    const path = isPublicMozos()
+      ? `/public/negocios/${encodeURIComponent(negocioId)}/mozos/pedidos`
+      : `/public/negocios/${encodeURIComponent(negocioId)}/pedidos`;
+    return request<any>(path, {
       method: 'POST',
       body: JSON.stringify(data),
-    }, negocioId),
+    }, negocioId);
+  },
   updatePedido: (arg1: any, arg2: any, arg3?: any) => {
     const t = arg3 !== undefined ? String(arg1) : getApiTenant();
     const id = arg3 !== undefined ? String(arg2) : String(arg1);
