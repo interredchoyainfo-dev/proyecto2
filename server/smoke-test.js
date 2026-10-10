@@ -173,8 +173,9 @@ try {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ...publicMozosOrder, estado: 'en_preparacion' }),
   });
-  assert.equal(publicMozosUpdate.status, 200, 'public waiter route must update order status without a token');
-  assert.equal((await publicMozosUpdate.json()).estado, 'en_preparacion');
+  const publicMozosUpdateBody = await publicMozosUpdate.text();
+  assert.equal(publicMozosUpdate.status, 200, `public waiter update failed: ${publicMozosUpdateBody}`);
+  assert.equal(JSON.parse(publicMozosUpdateBody).estado, 'en_preparacion');
 
   const ordersAfterPublicCreate = await fetch(`${baseUrl}/api/negocios/giovanni/pedidos`, {
     headers: {
