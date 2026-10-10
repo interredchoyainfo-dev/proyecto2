@@ -69,7 +69,7 @@ export default function MozoPedido() {
   };
 
   const handlePedirCuenta = () => {
-    if (mesa) updateMesaEstado(mesa.id, 'cuenta_pedida');
+    if (mesa) updateMesaEstado(mesa.id, 'cuenta_pedida', undefined, negocioId || 'giovanni');
     updatePedidoEstado(pedido.id, 'listo');
     flash('Cuenta pedida');
   };
@@ -78,7 +78,7 @@ export default function MozoPedido() {
     if (pedido.items.length === 0) {
       // Solo cerrar sin cobrar
       if (mesa) {
-        updateMesaEstado(mesa.id, 'libre');
+        updateMesaEstado(mesa.id, 'libre', undefined, negocioId || 'giovanni');
         updatePedidoEstado(pedido.id, 'cancelado');
       }
       navigate(`/${negocioId}/app/mozos`);
