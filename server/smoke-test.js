@@ -181,6 +181,37 @@ try {
   assert.equal(publicWaiterOrderResponse.status, 201, 'public waiter must create an order without a token');
   assert.equal((await publicWaiterOrderResponse.json()).order.orderId, publicWaiterOrderPayload.id);
 
+  // Los borradores vacíos deben existir en SQLite desde que se abre una mesa.
+  const waiterDraftPayload = {
+    id: 'smoke-waiter-empty-draft',
+    tipoPedido: 'salon',
+    mesaId: publicMenu.mesas[0].id,
+    estado: 'borrador',
+    items: [],
+  };
+  const waiterDraftResponse = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/pedidos`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(waiterDraftPayload),
+  });
+  assert.equal(waiterDraftResponse.status, 201, 'empty waiter table draft must be persisted before adding items');
+
+  const waiterDraftWithItem = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/pedidos`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      ...waiterDraftPayload,
+      items: [{
+        id: 'smoke-waiter-empty-draft-item',
+        productoId: publicMenu.productos[0].id,
+        cantidad: 1,
+        estadoItem: 'pendiente',
+        enviadoCocina: false,
+      }],
+    }),
+  });
+  assert.equal(waiterDraftWithItem.status, 200, 'adding items to an existing draft must not create a duplicate order');
+
   // La vista de mozos debe leer pedidos y mesas sin login y permitir actualizar el estado.
   const publicMozosSyncResponse = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/sync`);
   assert.equal(publicMozosSyncResponse.status, 200, 'public waiter route must load its operational snapshot without a token');
@@ -201,6 +232,33 @@ try {
   const publicMozosUpdateBody = await publicMozosUpdate.text();
   assert.equal(publicMozosUpdate.status, 200, `public waiter update failed: ${publicMozosUpdateBody}`);
   assert.equal(JSON.parse(publicMozosUpdateBody).estado, 'en_preparacion');
+
+  const closeWaiterOrder = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/pedidos/${encodeURIComponent(waiterDraftPayload.id)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      id: waiterDraftPayload.id,
+      tipoPedido: 'salon',
+      mesaId: waiterDraftPayload.mesaId,
+      estado: 'entregado',
+      total: publicMenu.productos[0].price,
+      items: [{
+        id: 'smoke-waiter-empty-draft-item',
+        productoId: publicMenu.productos[0].id,
+        nombre: publicMenu.productos[0].name,
+        cantidad: 1,
+        precioUnitario: publicMenu.productos[0].price,
+        subtotal: publicMenu.productos[0].price,
+        estadoItem: 'pendiente',
+        enviadoCocina: false,
+      }],
+    }),
+  });
+  assert.equal(closeWaiterOrder.status, 200, 'closing a waiter order must persist successfully');
+  const afterCloseSnapshot = await (await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/sync`)).json();
+  const closedMesa = afterCloseSnapshot.mesas.find((mesa) => mesa.id === waiterDraftPayload.mesaId);
+  assert.equal(closedMesa.estado, 'libre', 'closing the waiter order must free the same table in the shared snapshot');
+  assert.equal(afterCloseSnapshot.pedidos.find((order) => order.id === waiterDraftPayload.id).estado, 'entregado');
 
   const ordersAfterPublicCreate = await fetch(`${baseUrl}/api/negocios/giovanni/pedidos`, {
     headers: {
