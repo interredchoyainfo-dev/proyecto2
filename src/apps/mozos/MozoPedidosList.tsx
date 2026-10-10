@@ -89,7 +89,8 @@ export default function MozoPedidosList() {
   const activos = useMemo(() => {
     return pedidos
       .filter((p) => (p.negocioId || 'giovanni').toLowerCase() === currentNegocio)
-      .filter((p) => !['entregado', 'cancelado'].includes(p.estado) || p.items.some((i) => i.estadoItem === 'listo'))
+      // Un pedido cobrado/cerrado nunca debe reaparecer por conservar ítems listos.
+      .filter((p) => !['entregado', 'cancelado'].includes(p.estado))
       .filter((p) => p.items.length > 0)
       .slice()
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
