@@ -130,7 +130,7 @@ export default function TenantsPage() {
     setEditSlug(t.slug);
     setEditPlan(t.plan);
     setEditAdminUser(t.adminUser || 'admin');
-    setEditAdminPassword(t.adminPassword || 'admin');
+    setEditAdminPassword('');
     setEditThemePreset(t.theme?.preset || 'superadmin');
     setEditDescripcion(t.descripcion || DEFAULT_DESC);
     setEditSubtitulo((t as any).subtitulo || 'TU LUGAR DEPORTIVO');
@@ -403,6 +403,7 @@ export default function TenantsPage() {
                     type="text"
                     value={editAdminPassword}
                     onChange={(e) => setEditAdminPassword(e.target.value)}
+                    placeholder="Dejar vacío para conservar la contraseña actual"
                     className="w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white focus:outline-none focus:ring-2 focus:ring-violet-500 text-xs font-mono"
                   />
                 </div>
