@@ -87,6 +87,7 @@ export const api = {
   // Tenants Management (SuperAdmin)
   getTenants: () => request<{ ok: boolean; tenants: any[] }>('/tenants'),
   getTenant: (id: string) => request<any>(`/tenants/${encodeURIComponent(id)}`),
+  getPublicTenant: (slug: string) => request<{ ok: boolean; tenant: any }>(`/public/tenants/${encodeURIComponent(slug)}`, undefined, slug),
   createTenant: (data: any) =>
     request('/tenants', { method: 'POST', body: JSON.stringify(data) }),
   updateTenant: (id: string, data: any) =>
