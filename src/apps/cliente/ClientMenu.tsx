@@ -5,6 +5,7 @@ import { useMesasStore } from '../../store/useMesasStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import { Icon } from '../../components/ui/Icon';
 import { ensureProductMedia } from '../../lib/productImages';
+import { api, getApiTenant } from '../../lib/api';
 
 const C = {
   surface: '#131318',
@@ -49,6 +50,8 @@ export default function ClientMenu() {
   const [done, setDone] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const pendingPedidoIdRef = useRef<string | null>(null);
+  const [submitError, setSubmitError] = useState('');
   const [orderType, setOrderType] = useState<'llevar' | 'local' | 'delivery'>('llevar');
   const [address, setAddress] = useState('');
   const [mesaId, setMesaId] = useState('');
@@ -76,36 +79,66 @@ export default function ClientMenu() {
     });
   };
 
-  const handleOrder = () => {
+  const handleOrder = async () => {
     if (submittingRef.current || cart.length === 0) return;
     if (orderType !== 'local' && !name.trim()) return;
     if (orderType === 'local' && !mesaId) return;
     if (orderType === 'delivery' && !address.trim()) return;
 
-    // Ref blocks rapid double-clicks before React renders the disabled button.
+    // Bloquea dobles clics y reutiliza el mismo ID si hay que reintentar la conexión.
     submittingRef.current = true;
     setIsSubmitting(true);
+    setSubmitError('');
     try {
-    const tipoPedido = orderType === 'delivery' ? 'delivery' : orderType === 'local' ? 'salon' : 'mostrador';
-    let pedidoId: string;
-    if (orderType === 'local' && mesaId) {
-      const existing = useMesasStore.getState().getPedidoByMesa(mesaId);
-      if (existing && !['entregado', 'cancelado'].includes(existing.estado)) { pedidoId = existing.id; }
-      else { pedidoId = createPedido({ tipoPedido: 'salon', mesaId, clienteNombre: `Mesa ${mesas.find((m) => m.id === mesaId)?.numero}` }); }
-    } else {
-      pedidoId = createPedido({ tipoPedido, mesaId: undefined, clienteNombre: name, clienteTelefono: phone, direccionDelivery: orderType === 'delivery' ? address : undefined });
-    }
-    cart.forEach((item) => {
-      const product = products.find((p) => p.id === item.id);
-      if (product) addItemToPedido(pedidoId, product, item.qty, item.notes);
-    });
-    updatePedidoEstado(pedidoId, orderType === 'delivery' ? 'listo' : 'confirmado');
-    addNotification({ title: `Nuevo pedido · ${orderType === 'llevar' ? 'Para llevar' : orderType === 'local' ? 'Comer aquí' : 'Delivery'}`, message: `${orderType === 'local' ? 'Mesa' : name}: ${cart.map((i) => `${i.qty}x ${i.name}`).join(', ')}`, type: 'info' });
-    setDone(true);
-    setCart([]);
-    setShowCheckout(false);
+      let pedidoId = pendingPedidoIdRef.current;
+      if (!pedidoId) {
+        const tipoPedido = orderType === 'delivery' ? 'delivery' : orderType === 'local' ? 'salon' : 'mostrador';
+        if (orderType === 'local' && mesaId) {
+          const existing = useMesasStore.getState().getPedidoByMesa(mesaId);
+          if (existing && !['entregado', 'cancelado'].includes(existing.estado)) {
+            pedidoId = existing.id;
+          } else {
+            pedidoId = createPedido({
+              tipoPedido: 'salon',
+              mesaId,
+              clienteNombre: `Mesa ${mesas.find((m) => m.id === mesaId)?.numero}`,
+            });
+          }
+        } else {
+          pedidoId = createPedido({
+            tipoPedido,
+            mesaId: undefined,
+            clienteNombre: name,
+            clienteTelefono: phone,
+            direccionDelivery: orderType === 'delivery' ? address : undefined,
+          });
+        }
+        pendingPedidoIdRef.current = pedidoId;
+        cart.forEach((item) => {
+          const product = products.find((p) => p.id === item.id);
+          if (product) addItemToPedido(pedidoId!, product, item.qty, item.notes);
+        });
+        updatePedidoEstado(pedidoId, orderType === 'delivery' ? 'listo' : 'confirmado');
+      }
+
+      const pedido = useMesasStore.getState().pedidos.find((p) => p.id === pedidoId);
+      if (!pedido) throw new Error('No se encontró el pedido preparado para enviar.');
+      // Esperar confirmación del servidor antes de mostrar éxito al cliente.
+      // El endpoint es idempotente: reintentar con el mismo pedido no duplica stock ni comanda.
+      await api.createPublicPedido(getApiTenant(), pedido);
+
+      addNotification({
+        title: `Nuevo pedido · ${orderType === 'llevar' ? 'Para llevar' : orderType === 'local' ? 'Comer aquí' : 'Delivery'}`,
+        message: `${orderType === 'local' ? 'Mesa' : name}: ${pedido.items.map((i) => `${i.cantidad}x ${i.nombre}`).join(', ')}`,
+        type: 'info',
+      });
+      pendingPedidoIdRef.current = null;
+      setDone(true);
+      setCart([]);
+      setShowCheckout(false);
     } catch (error) {
       console.error('No se pudo confirmar el pedido:', error);
+      setSubmitError('No pudimos registrar el pedido en el servidor. Revisá la conexión y tocá “Reintentar”; no se va a crear un pedido duplicado.');
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
@@ -463,6 +496,7 @@ export default function ClientMenu() {
               </div>
             )}
 
+            {submitError && <p className="text-sm text-red-400 mb-2">{submitError}</p>}
             <button
               onClick={handleOrder}
               disabled={isSubmitting || (orderType !== 'local' && !name.trim()) || (orderType === 'local' && !mesaId) || (orderType === 'delivery' && !address.trim())}
