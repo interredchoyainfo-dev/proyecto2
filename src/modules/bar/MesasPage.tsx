@@ -89,7 +89,7 @@ export default function MesasPage() {
   );
 
   const handleOpenMesa = (mesa: Mesa) => {
-    let pedido = getPedidoByMesa(mesa.id);
+    let pedido = getPedidoByMesa(mesa.id, currentNegocio);
     if (!pedido) {
       createPedido({ tipoPedido: 'salon', mesaId: mesa.id });
     }
@@ -97,7 +97,7 @@ export default function MesasPage() {
     setPanel('detalle');
   };
 
-  const pedidoActivo = selectedMesa ? getPedidoByMesa(selectedMesa.id) : null;
+  const pedidoActivo = selectedMesa ? getPedidoByMesa(selectedMesa.id, currentNegocio) : null;
 
   const addProduct = (productId: string, notes?: string) => {
     if (!pedidoActivo) return;
@@ -234,7 +234,7 @@ export default function MesasPage() {
           ) : (
             filtered.map((mesa) => {
               const cfg = estadoConfig[mesa.estado] || DEFAULT_ESTADO;
-              const pedido = getPedidoByMesa(mesa.id);
+              const pedido = getPedidoByMesa(mesa.id, currentNegocio);
               const items = Array.isArray(pedido?.items) ? pedido.items : [];
               const hasItems = items.length > 0;
               const hasListo = items.some((i) => i.estadoItem === 'listo');
