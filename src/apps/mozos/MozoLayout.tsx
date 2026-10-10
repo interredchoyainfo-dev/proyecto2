@@ -1,12 +1,11 @@
 import { useMemo } from 'react';
-import { Outlet, NavLink, useNavigate, useParams } from 'react-router-dom';
+import { Outlet, NavLink, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useMesasStore } from '../../store/useMesasStore';
 import { Icon } from '../../components/ui/Icon';
 
 export default function MozoLayout() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
   const { negocioId } = useParams();
   const pedidos = useMesasStore((s) => s.pedidos);
   const listosCount = useMemo(
@@ -22,7 +21,7 @@ export default function MozoLayout() {
           <Icon name="room_service" size={22} />
           <div>
             <p className="font-bold text-sm leading-tight">Mozos</p>
-            <p className="text-[10px] opacity-80">{user?.nombre}</p>
+            <p className="text-[10px] opacity-80">{user?.nombre || 'Acceso libre'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -31,15 +30,6 @@ export default function MozoLayout() {
             className="p-2 rounded-full hover:bg-white/10"
           >
             <Icon name="dark_mode" size={20} />
-          </button>
-          <button
-            onClick={() => {
-              logout();
-              navigate(`/${negocioId}/login`);
-            }}
-            className="p-2 rounded-full hover:bg-white/10"
-          >
-            <Icon name="logout" size={20} />
           </button>
         </div>
       </header>
