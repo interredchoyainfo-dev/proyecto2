@@ -145,42 +145,9 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
     );
     unsubscribes.push(unsubClientes);
 
-    // 6. ESPACIOS / CANCHAS DEL NEGOCIO
-    const unsubEspacios = onSnapshot(
-      getTenantCollection('espacios', targetTenant),
-      (snap) => {
-        const tenantEspacios = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() } as Espacio))
-          .filter((e) => {
-            // Para negocios que no sean giovanni, no permitir espacios demo heredados
-            if (targetTenant !== 'giovanni') {
-              if (
-                e.id.startsWith('op-') ||
-                e.id.startsWith('demo-') ||
-                e.id.startsWith('esp-oasispadel-1') ||
-                e.id.startsWith('esp-oasispadel-2') ||
-                ['c1', 'c2', 'c3', 'c4', 's1'].includes(e.id)
-              ) {
-                return false;
-              }
-            }
-            return true;
-          });
-
-        const otherEspacios = useEspaciosStore
-          .getState()
-          .espacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase() !== targetTenant);
-
-        useEspaciosStore.setState({ espacios: [...otherEspacios, ...tenantEspacios] });
-
-        if (snap.empty && targetTenant === 'giovanni') {
-          seedInitialTenantCollectionIfEmpty('espacios', targetTenant);
-        }
-      },
-      (err) => console.warn(`Firestore espacios error (${targetTenant}):`, err)
-    );
-    unsubscribes.push(unsubEspacios);
-
+    // Los espacios ya no se sincronizan con Firestore.
+    // La única fuente de verdad es la API SQLite multi-tenant de Render.
+    
     // 7. OFERTAS DEL NEGOCIO
     const unsubOfertas = onSnapshot(
       getTenantCollection('ofertas', targetTenant),
@@ -242,15 +209,8 @@ async function seedInitialTenantCollectionIfEmpty(colName: string, tenantId: str
         console.log(`Firestore (${tenantId}): Migradas ${current.length} mesas iniciales.`);
       }
     } else if (colName === 'espacios') {
-      const current = useEspaciosStore.getState().getEspaciosByTenant('giovanni');
-      if (current.length > 0) {
-        current.forEach((e) => {
-          const ref = getTenantDoc('espacios', e.id, tenantId);
-          batch.set(ref, sanitize(e));
-        });
-        await batch.commit();
-        console.log(`Firestore (${tenantId}): Migrados ${current.length} espacios iniciales.`);
-      }
+      // Intencionalmente vacío: los espacios pertenecen solo a SQLite/API.
+      return;
     } else if (colName === 'clientes') {
       const current = useStore.getState().clients;
       if (current.length > 0) {
@@ -411,22 +371,14 @@ export async function firebaseDeleteCliente(id: string, tenantId?: string) {
   }
 }
 
-export async function firebaseSaveEspacio(espacio: Espacio, tenantId?: string) {
-  try {
-    const tid = tenantId || getCurrentTenant();
-    await setDoc(getTenantDoc('espacios', espacio.id, tid), sanitize(espacio), { merge: true });
-  } catch (err) {
-    console.error('Error al guardar espacio en Firestore:', err);
-  }
+// Compatibilidad con llamadas antiguas: los espacios ya no se escriben en Firestore.
+// La API SQLite multi-tenant es la única fuente de verdad.
+export async function firebaseSaveEspacio(_espacio: Espacio, _tenantId?: string) {
+  return;
 }
 
-export async function firebaseDeleteEspacio(id: string, tenantId?: string) {
-  try {
-    const tid = tenantId || getCurrentTenant();
-    await deleteDoc(getTenantDoc('espacios', id, tid));
-  } catch (err) {
-    console.error('Error al eliminar espacio en Firestore:', err);
-  }
+export async function firebaseDeleteEspacio(_id: string, _tenantId?: string) {
+  return;
 }
 
 export async function firebaseSaveCajaSesion(sesion: CashSession, tenantId?: string) {
