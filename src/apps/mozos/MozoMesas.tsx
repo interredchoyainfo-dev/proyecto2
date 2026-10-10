@@ -43,7 +43,7 @@ export default function MozoMesas() {
     });
     // Revertir a libre si se abrió solo para mirar — la ocupación real al agregar items
     // createPedido marca ocupada; la corregimos:
-    useMesasStore.getState().updateMesaEstado(mesaId, estado === 'reservada' ? 'reservada' : 'libre');
+    useMesasStore.getState().updateMesaEstado(mesaId, estado === 'reservada' ? 'reservada' : 'libre', undefined, negocioId || 'giovanni');
     navigate(`/${negocioId}/app/mozos/pedido/${pedidoId}`);
   };
 
