@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { useStore } from '../../store/useStore';
+import { api } from '../../lib/api';
 import { Icon } from '../../components/ui/Icon';
 
 const C = {
@@ -116,6 +117,9 @@ export default function ClientReservar() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [done, setDone] = useState(false);
+  const [savingReservation, setSavingReservation] = useState(false);
+  const [reservationError, setReservationError] = useState('');
+  const [whatsAppUrl, setWhatsAppUrl] = useState('');
   const [paymentType, setPaymentType] = useState<'pendiente' | 'senado' | 'pagado'>('pendiente');
   const [senaAmount, setSenaAmount] = useState(0);
   const [personas, setPersonas] = useState(1);
@@ -163,32 +167,82 @@ export default function ClientReservar() {
     if (availableHours.length && !availableHours.includes(startTime)) setStartTime(availableHours[0]);
   }, [date, espacioId, availableHours.join(',')]);
 
-  const handleConfirm = () => {
-    if (!espacioId || !name.trim() || !phone.trim()) return;
-    let clientId = clients.find((c) => c.phone === phone || c.name.toLowerCase() === name.toLowerCase())?.id;
-    if (!clientId) {
-      addClient({ name, phone, isFrequent: false, isSanctioned: false });
-      clientId = `cl${Date.now()}`;
+  const handleConfirm = async () => {
+    if (!espacioId || !name.trim() || !phone.trim() || savingReservation) return;
+    setSavingReservation(true);
+    setReservationError('');
+    setWhatsAppUrl('');
+    try {
+      const existingClient = clients.find((c) => c.phone === phone || c.name.toLowerCase() === name.toLowerCase());
+      const clientId = existingClient?.id || `cl${Date.now()}`;
+      const paid = paymentType === 'pagado' ? amount : paymentType === 'senado' ? senaAmount || Math.round(amount * 0.3) : 0;
+      const payload = {
+        negocioId: currentNegocio,
+        espacioId,
+        clientId,
+        clientName: name.trim(),
+        clientPhone: phone.trim(),
+        date,
+        startTime,
+        endTime: endHour,
+        paymentStatus: paymentType,
+        paymentMethod: paymentType !== 'pendiente' ? 'transferencia' : 'efectivo',
+        amount,
+        paidAmount: paid,
+        senaPagada: paid,
+        saldoPendiente: Math.max(0, amount - paid),
+        personas: espacio?.usaCapacidad ? personas : undefined,
+        estado: 'confirmada',
+      };
+
+      // No mostramos éxito hasta que el servidor confirme que guardó la reserva.
+      const saved = await api.createReserva(currentNegocio, payload);
+      useStore.setState((state) => ({
+        reservations: [
+          ...state.reservations.filter((r) => r.id !== saved.id),
+          { ...payload, ...saved, negocioId: currentNegocio },
+        ],
+      }));
+      updateStatus(espacioId, 'reservada');
+
+      try {
+        const tenantResponse = await api.getPublicTenant(currentNegocio);
+        const tenant = tenantResponse?.tenant;
+        const rawPhone = String(tenant?.whatsapp || '').replace(/\\D/g, '');
+        const normalizedPhone = rawPhone.startsWith('54')
+          ? rawPhone
+          : rawPhone.length === 10
+            ? `549${rawPhone}`
+            : rawPhone.replace(/^0+/, '');
+        if (normalizedPhone) {
+          const message = [
+            `Hola, quiero confirmar/consultar mi reserva en ${tenant?.nombre || currentNegocio}.`,
+            '',
+            'DATOS DE LA RESERVA',
+            `Código: ${saved.id}`,
+            `Nombre: ${name.trim()}`,
+            `Teléfono: ${phone.trim()}`,
+            `Espacio: ${espacio?.name || espacioId}`,
+            `Fecha: ${date}`,
+            `Horario: ${startTime} a ${endHour}`,
+            `Personas: ${espacio?.usaCapacidad ? personas : 'No informado'}`,
+            `Importe total: ${formatMoney(amount)}`,
+            `Seña abonada: ${formatMoney(paid)}`,
+            `Saldo pendiente: ${formatMoney(Math.max(0, amount - paid))}`,
+            `Estado de pago: ${paymentType}`,
+          ].join('\\n');
+          setWhatsAppUrl(`https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`);
+        }
+      } catch (error) {
+        console.warn('La reserva quedó guardada, pero no se pudo recuperar el WhatsApp del negocio:', error);
+      }
+      setDone(true);
+    } catch (error) {
+      console.error('No se pudo guardar la reserva:', error);
+      setReservationError(error instanceof Error ? error.message : 'No se pudo guardar la reserva. Revisá la conexión e intentá nuevamente.');
+    } finally {
+      setSavingReservation(false);
     }
-    const paid = paymentType === 'pagado' ? amount : paymentType === 'senado' ? senaAmount || Math.round(amount * 0.3) : 0;
-    addReservation({
-      espacioId,
-      clientId,
-      clientName: name,
-      clientPhone: phone,
-      date,
-      startTime,
-      endTime: endHour,
-      paymentStatus: paymentType,
-      paymentMethod: paymentType !== 'pendiente' ? 'transferencia' : undefined,
-      amount,
-      paidAmount: paid,
-      personas: espacio?.usaCapacidad ? personas : undefined,
-      estado: 'confirmada',
-      negocioId: currentNegocio,
-    });
-    updateStatus(espacioId, 'reservada');
-    setDone(true);
   };
 
   // ── DONE STATE ──
@@ -202,6 +256,25 @@ export default function ClientReservar() {
         <p className="text-sm" style={{ color: C.textSecondary }}>
           {espacio?.name} · {date} · {startTime} – {endHour}
         </p>
+        <p className="text-sm" style={{ color: C.textSecondary }}>
+          La reserva quedó guardada en el sistema.
+        </p>
+        {whatsAppUrl && (
+          <a
+            href={whatsAppUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full h-14 rounded-xl font-black text-lg uppercase tracking-wider flex items-center justify-center gap-2"
+            style={{ background: '#25D366', color: '#fff' }}
+          >
+            <Icon name="whatsapp" size={22} /> Enviar reserva por WhatsApp
+          </a>
+        )}
+        {!whatsAppUrl && (
+          <p className="text-xs" style={{ color: C.textMuted }}>
+            No hay un WhatsApp configurado para este negocio. La reserva sí quedó guardada.
+          </p>
+        )}
         <button
           onClick={() => navigate(`/${negocioId}/mis-reservas`)}
           className="w-full h-14 rounded-xl font-black text-lg uppercase tracking-wider"
@@ -622,13 +695,18 @@ export default function ClientReservar() {
             )}
           </div>
 
+          {reservationError && (
+            <div role="alert" className="rounded-xl border border-red-400/40 bg-red-500/10 p-3 text-sm text-red-300">
+              {reservationError}
+            </div>
+          )}
           <button
             onClick={handleConfirm}
-            disabled={!name.trim() || !phone.trim()}
+            disabled={!name.trim() || !phone.trim() || savingReservation}
             className="w-full h-14 rounded-xl font-black text-lg uppercase tracking-wider disabled:opacity-40 active:scale-[0.98] transition-all"
             style={{ background: C.accent, color: C.surfaceBase }}
           >
-            Confirmar reserva
+            {savingReservation ? 'Guardando reserva…' : 'Confirmar reserva'}
           </button>
         </div>
       )}
