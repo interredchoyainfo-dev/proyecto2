@@ -20,6 +20,7 @@ const paymentBadge: Record<string, string> = {
 
 export function Reservations() {
   const allReservations = useStore((s) => s.reservations);
+  const reservationPersistenceError = useStore((s) => s.reservationPersistenceError);
   const clients = useStore((s) => s.clients);
   const { negocioId } = useParams<{ negocioId: string }>();
   const tenantId = (negocioId || 'giovanni').toLowerCase();
@@ -43,6 +44,7 @@ export function Reservations() {
           negocioId: tenantId,
         })) : [];
         useStore.setState((state) => ({
+          reservationPersistenceError: null,
           reservations: [
             ...state.reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== tenantId),
             ...normalized,
@@ -198,9 +200,9 @@ export function Reservations() {
         </div>
       </div>
 
-      {reservationsLoadError && (
+      {(reservationsLoadError || reservationPersistenceError) && (
         <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {reservationsLoadError}
+          {reservationsLoadError || reservationPersistenceError}
         </div>
       )}
       {reservationsLoading && (
