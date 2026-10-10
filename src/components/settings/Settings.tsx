@@ -4,6 +4,7 @@ import { useStore } from '../../store/useStore';
 import { useSuperAdminStore } from '../../store/useSuperAdminStore';
 import { useEspaciosStore } from '../../store/useEspaciosStore';
 import { Icon } from '../ui/Icon';
+import { api } from '../../lib/api';
 import type { DaySchedule } from '../../types';
 
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -14,8 +15,6 @@ export function Settings() {
   const tenant = useSuperAdminStore((s) =>
     s.tenants.find((t) => t.slug.toLowerCase() === currentSlug || t.id.toLowerCase() === currentSlug)
   );
-  const updateTenant = useSuperAdminStore((s) => s.updateTenant);
-
   const [nombre, setNombre] = useState(tenant?.nombre || "Complejo Deportivo");
   const [subtitulo, setSubtitulo] = useState((tenant as any)?.subtitulo || "TU LUGAR DEPORTIVO");
   const [descripcion, setDescripcion] = useState(
@@ -24,29 +23,49 @@ export function Settings() {
   );
   const [whatsapp, setWhatsapp] = useState((tenant as any)?.whatsapp || "3855374835");
   const [savedBanner, setSavedBanner] = useState(false);
+  const [savingInfo, setSavingInfo] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
+    let active = true;
+    const applyTenant = (data: any) => {
+      if (!active || !data) return;
+      setNombre(data.nombre || 'Complejo Deportivo');
+      setSubtitulo(data.subtitulo || 'TU LUGAR DEPORTIVO');
+      setDescripcion(data.descripcion || '');
+      setWhatsapp(data.whatsapp || '');
+    };
     if (tenant) {
-      setNombre(tenant.nombre);
-      setSubtitulo((tenant as any).subtitulo || "TU LUGAR DEPORTIVO");
-      setDescripcion(
-        tenant.descripcion ||
-          "Instalaciones de primer nivel. Reservas instantáneas. Gastronomía excepcional. Elevamos tu juego dentro y fuera de la cancha."
-      );
-      setWhatsapp((tenant as any).whatsapp || "3855374835");
+      applyTenant(tenant);
+    } else {
+      api.getPublicTenant(currentSlug)
+        .then((response) => applyTenant(response?.tenant))
+        .catch((error) => console.error('No se pudo cargar la configuración del negocio:', error));
     }
-  }, [tenant]);
+    return () => { active = false; };
+  }, [tenant, currentSlug]);
 
-  const handleSaveInfo = () => {
-    if (!tenant) return;
-    updateTenant(tenant.id, {
-      nombre: nombre.trim(),
-      subtitulo: subtitulo.trim(),
-      descripcion: descripcion.trim(),
-      whatsapp: whatsapp.trim(),
-    } as any);
-    setSavedBanner(true);
-    setTimeout(() => setSavedBanner(false), 3000);
+  const handleSaveInfo = async () => {
+    if (savingInfo) return;
+    setSavingInfo(true);
+    setSaveError('');
+    setSavedBanner(false);
+    try {
+      const result = await api.updateBusinessSettings(currentSlug, {
+        nombre: nombre.trim(),
+        subtitulo: subtitulo.trim(),
+        descripcion: descripcion.trim(),
+        whatsapp: whatsapp.trim(),
+      });
+      if (!result?.success) throw new Error('El servidor no confirmó el guardado.');
+      setSavedBanner(true);
+      setTimeout(() => setSavedBanner(false), 3000);
+    } catch (error) {
+      console.error('No se pudo guardar la configuración del negocio:', error);
+      setSaveError(error instanceof Error ? error.message : 'No se pudo guardar la configuración. Revisá la conexión y tu sesión.');
+    } finally {
+      setSavingInfo(false);
+    }
   };
 
   const config = useStore((s) => s.config);
@@ -122,8 +141,13 @@ export function Settings() {
           )}
         </div>
         <p className="text-xs text-slate-500">
-          Personaliza el nombre, lema y descripción que verán tus clientes en la portada.
+          Personaliza el nombre, lema, descripción y WhatsApp que recibirán las reservas de este negocio.
         </p>
+        {saveError && (
+          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {saveError}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -173,10 +197,11 @@ export function Settings() {
           <div className="flex items-end">
             <button
               onClick={handleSaveInfo}
-              className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+              disabled={savingInfo}
+              className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
             >
               <Icon name="save" size={18} />
-              Guardar Información de Portada
+              {savingInfo ? 'Guardando…' : 'Guardar Información'} de Portada
             </button>
           </div>
         </div>
