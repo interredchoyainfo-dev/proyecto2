@@ -202,13 +202,9 @@ function TenantRoutes() {
         {/* Specialized apps (future) */}
         <Route
           path="app/mozos"
-          element={
-            <ModuleGuard moduleId="mozos">
-              <RoleGuard allowedRoles={['mozo', 'admin', 'encargado']}>
-                <MozoLayout />
-              </RoleGuard>
-            </ModuleGuard>
-          }
+          // Ruta pública para que el personal entre directamente desde el enlace compartido.
+          // Las demás secciones administrativas siguen protegidas por autenticación.
+          element={<MozoLayout />}
         >
           <Route index element={<MozoMesas />} />
           <Route path="pedidos" element={<MozoPedidosList />} />
