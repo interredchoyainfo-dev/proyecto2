@@ -382,7 +382,7 @@ useMesasStore.subscribe((state) => {
       const prevMap = new Map(_prevMesas.map((m) => [m.id, m]));
       state.mesas.forEach((m) => {
         if (prevMap.get(m.id) !== m) {
-          persistMesa(m.id, m).catch(() => {});
+          persistMesa(m.id, m, !prevMap.has(m.id)).catch(() => {});
         }
       });
       _prevMesas = state.mesas;
