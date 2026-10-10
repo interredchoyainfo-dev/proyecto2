@@ -79,34 +79,49 @@ export default function TenantsPage() {
       t.slug.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!nombre.trim() || !slug.trim()) return;
     const cleanSlug = slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    if (!cleanSlug) {
+      alert('Ingresá un identificador válido para el negocio.');
+      return;
+    }
     const selectedPreset = THEME_PRESETS.find((p) => p.id === themePreset) || THEME_PRESETS[0];
-    createTenant({
-      nombre: nombre.trim(),
-      slug: cleanSlug,
-      plan,
-      adminUser: adminUser.trim() || `admin_${cleanSlug}`,
-      adminPassword: adminPassword.trim() || `${cleanSlug}123`,
-      descripcion: descripcion.trim(),
-      theme: {
-        primaryColor: selectedPreset.primaryColor,
-        accentColor: selectedPreset.accentColor,
-        secondaryColor: selectedPreset.secondaryColor,
-        preset: selectedPreset.id,
-      },
-    });
-    setNombre('');
-    setSlug('');
-    setPlan('trial');
-    setAdminUser('');
-    setAdminPassword('');
-    setThemePreset('superadmin');
-    setDescripcion(DEFAULT_DESC);
-    setShowForm(false);
-    setSuccessBanner(`¡Complejo "${nombre.trim()}" registrado con éxito! Base de datos propia e independiente (${cleanSlug}.sqlite y Firestore) generada automáticamente.`);
-    setTimeout(() => setSuccessBanner(null), 8000);
+    const finalAdminUser = adminUser.trim() || `admin_${cleanSlug}`;
+    const finalAdminPassword = adminPassword.trim() || `${cleanSlug}123`;
+
+    try {
+      await createTenant({
+        nombre: nombre.trim(),
+        slug: cleanSlug,
+        plan,
+        adminUser: finalAdminUser,
+        adminPassword: finalAdminPassword,
+        descripcion: descripcion.trim(),
+        theme: {
+          primaryColor: selectedPreset.primaryColor,
+          accentColor: selectedPreset.accentColor,
+          secondaryColor: selectedPreset.secondaryColor,
+          preset: selectedPreset.id,
+        },
+      });
+
+      setSuccessBanner(
+        `Negocio "${nombre.trim()}" creado en la base compartida con datos aislados. Acceso inicial — Usuario: ${finalAdminUser} | Contraseña: ${finalAdminPassword}. Guardá estos datos ahora; por seguridad no se muestran en la lista.`
+      );
+      setNombre('');
+      setSlug('');
+      setPlan('trial');
+      setAdminUser('');
+      setAdminPassword('');
+      setThemePreset('superadmin');
+      setDescripcion(DEFAULT_DESC);
+      setShowForm(false);
+      window.setTimeout(() => setSuccessBanner(null), 15000);
+    } catch (err) {
+      console.error('[TenantsPage] No se pudo crear el negocio:', err);
+      alert(err instanceof Error ? `No se pudo crear el negocio: ${err.message}` : 'No se pudo crear el negocio. Revisá la conexión y volvé a intentar.');
+    }
   };
 
   const handleStartEdit = (t: TenantFull) => {
@@ -514,7 +529,7 @@ export default function TenantsPage() {
                             <p className="text-xs text-slate-400 font-mono">/{t.slug}</p>
                             <span className="text-[10px] text-slate-600">·</span>
                             <span className="text-[10px] text-violet-300 font-mono bg-violet-500/10 px-1.5 py-0.5 rounded border border-violet-500/20" title="Credenciales del negocio para ingresar a su administración">
-                              🔑 {t.adminUser || 'admin'} : {t.adminPassword || 'admin'}
+                              🔑 Usuario: {t.adminUser || 'no configurado'} · contraseña no visible
                             </span>
                           </div>
                         </div>
