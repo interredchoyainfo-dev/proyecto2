@@ -8,9 +8,10 @@ export default function MozoLayout() {
   const { user } = useAuth();
   const { negocioId } = useParams();
   const pedidos = useMesasStore((s) => s.pedidos);
+  const currentNegocio = (negocioId || 'giovanni').toLowerCase();
   const listosCount = useMemo(
-    () => pedidos.filter((p) => p.items.some((i) => i.estadoItem === 'listo')).length,
-    [pedidos]
+    () => pedidos.filter((p) => (p.negocioId || 'giovanni').toLowerCase() === currentNegocio && p.items.some((i) => i.estadoItem === 'listo')).length,
+    [pedidos, currentNegocio]
   );
 
   return (
