@@ -1560,7 +1560,7 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
         notas: item.notas || null,
         estadoItem: isPublicCustomerOrder ? 'pendiente' : (item.estadoItem || 'pendiente'),
         destinoComanda: prod.destinoComanda || 'cocina',
-        enviadoCocina: isPublicCustomerOrder || item.enviadoCocina !== false,
+        enviadoCocina: isPublicCustomerOrder || item.enviadoCocina === true || item.enviadoCocina === 1,
       });
     }
 
@@ -1699,7 +1699,7 @@ app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id'], (req, res)
           item.notas || null,
           item.estadoItem || 'pendiente',
           item.destinoComanda || 'cocina',
-          item.enviadoCocina === false || item.enviadoCocina === 0 ? 0 : 1
+          item.enviadoCocina === true || item.enviadoCocina === 1 ? 1 : 0
         );
       }
     }
