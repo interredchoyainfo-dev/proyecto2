@@ -57,26 +57,41 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
     // Así el pedido del cliente no depende de que Firestore tenga cuota disponible.
     if (!user) {
       let cancelled = false;
+      const publicMozos = typeof window !== 'undefined' && window.location.pathname.includes('/app/mozos');
       const pullPublicMenu = async () => {
         try {
-          const menu = await api.getPublicMenu(activeNegocio);
+          const data: any = publicMozos
+            ? await api.sync(activeNegocio)
+            : await api.getPublicMenu(activeNegocio);
           if (cancelled) return;
-          useStore.setState({ products: menu.productos || [] });
+          useStore.setState({ products: data.productos || [] });
           const otherMesas = useMesasStore.getState().mesas.filter(
             (mesa) => (mesa.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio
           );
-          const publicMesas = (menu.mesas || []).map((mesa: any) => ({
+          const publicMesas = (data.mesas || []).map((mesa: any) => ({
             ...mesa,
             negocioId: activeNegocio,
           }));
           useMesasStore.setState({ mesas: [...otherMesas, ...publicMesas] });
+
+          if (publicMozos && Array.isArray(data.pedidos)) {
+            const otherPedidos = useMesasStore.getState().pedidos.filter(
+              (pedido) => (pedido.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio
+            );
+            const publicPedidos = data.pedidos.map((pedido: any) => ({
+              ...pedido,
+              negocioId: activeNegocio,
+              items: Array.isArray(pedido.items) ? pedido.items : [],
+            }));
+            useMesasStore.setState({ pedidos: [...otherPedidos, ...publicPedidos] });
+          }
           setStatus('online');
         } catch (error) {
-          if (!cancelled) console.warn(`[DbSync] No se pudo cargar el menú público de ${activeNegocio}:`, error);
+          if (!cancelled) console.warn(`[DbSync] No se pudo cargar la vista pública de ${activeNegocio}:`, error);
         }
       };
       pullPublicMenu();
-      const publicInterval = setInterval(pullPublicMenu, 30000);
+      const publicInterval = setInterval(pullPublicMenu, publicMozos ? 5000 : 30000);
       return () => {
         cancelled = true;
         clearInterval(publicInterval);
@@ -217,6 +232,13 @@ export async function persistPedido(pedido: any) {
     // El menú del cliente no tiene sesión de staff: usa un endpoint público limitado
     // a crear pedidos confirmados, con precio/stock validados por el servidor.
     if (!getAuthToken()) {
+      if (typeof window !== 'undefined' && window.location.pathname.includes('/app/mozos')) {
+        const snapshot = await api.sync(tenant);
+        const found = (snapshot.pedidos || []).find((p: any) => p.id === pedido.id);
+        if (found) await api.updatePedido(tenant, pedido.id, pedido);
+        else if (Array.isArray(pedido.items) && pedido.items.length > 0) await api.createPublicPedido(tenant, pedido);
+        return;
+      }
       await api.createPublicPedido(tenant, pedido);
       return;
     }
@@ -241,9 +263,11 @@ export async function deletePedidoDb(id: string) {
 export async function persistMesa(id: string, data: any, isNew = false) {
   // Los clientes públicos no pueden mutar mesas directamente. El endpoint de pedido
   // marca la mesa ocupada dentro de la misma transacción de creación del pedido.
-  if (!getAuthToken()) return;
+  const publicMozos = typeof window !== 'undefined' && window.location.pathname.includes('/app/mozos');
+  if (!getAuthToken() && !publicMozos) return;
   const tenant = String(data.negocioId || getCurrentTenant()).toLowerCase();
   try {
+    if (isNew && publicMozos && !getAuthToken()) return;
     if (isNew) await api.createMesa(tenant, { id, ...data });
     else await api.updateMesa(tenant, id, data);
   } catch (error) {
