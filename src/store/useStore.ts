@@ -287,6 +287,7 @@ interface AppState {
   addClient: (client: Omit<Client, 'id' | 'createdAt' | 'totalReservations' | 'noShows'>) => void;
   updateClient: (id: string, data: Partial<Client>) => void;
   reservations: Reservation[];
+  reservationPersistenceError: string | null;
   addReservation: (res: Omit<Reservation, 'id' | 'createdAt'> & { courtId?: string }) => void;
   updateReservation: (id: string, data: Partial<Reservation>) => void;
   products: Product[];
@@ -331,6 +332,7 @@ export const useStore = create<AppState>()(
       currentUser,
       clients: initialClients,
       reservations: initialReservations,
+      reservationPersistenceError: null,
       products: initialProducts,
       cart: [],
       cashSession: null,
@@ -401,7 +403,21 @@ export const useStore = create<AppState>()(
         if (targetEspacio) {
           useEspaciosStore.getState().updateStatus(targetEspacio, 'reservada', id);
         }
-        persistReserva(full).catch(() => {});
+        set({ reservationPersistenceError: null });
+        persistReserva(full)
+          .then((saved) => {
+            set((s) => ({
+              reservations: s.reservations.map((r) => r.id === full.id ? { ...full, ...saved } : r),
+              reservationPersistenceError: null,
+            }));
+          })
+          .catch((error) => {
+            console.error('No se pudo guardar la reserva:', error);
+            set((s) => ({
+              reservations: s.reservations.filter((r) => r.id !== full.id),
+              reservationPersistenceError: error instanceof Error ? error.message : 'No se pudo guardar la reserva en el servidor.',
+            }));
+          });
       },
 
       updateReservation: (id, data) => {
