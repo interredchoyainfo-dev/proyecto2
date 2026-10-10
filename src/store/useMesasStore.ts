@@ -101,7 +101,7 @@ export const useMesasStore = create<MesasState>()(
         set((s) => ({
           mesas: s.mesas.map((m) =>
             m.id === mesaId && (!negocioId || (m.negocioId || 'giovanni').toLowerCase() === negocioId.toLowerCase())
-              ? { ...m, estado, mozoAsignadoId: mozoId ?? m.mozoAsignadoId }
+              ? { ...m, estado, mozoAsignadoId: mozoId ?? m.mozoAsignadoId, updatedAt: new Date().toISOString() }
               : m
           ),
         })),
