@@ -92,6 +92,8 @@ export const api = {
     request('/tenants', { method: 'POST', body: JSON.stringify(data) }),
   updateTenant: (id: string, data: any) =>
     request(`/tenants/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateBusinessSettings: (negocioId: string, data: any) =>
+    request(`${tenantPath(negocioId)}/configuracion`, { method: 'PUT', body: JSON.stringify(data) }, negocioId),
   deleteTenant: (id: string) =>
     request(`/tenants/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   resetTenant: (id: string) =>
@@ -127,6 +129,8 @@ export const api = {
     const data = arg2 !== undefined ? arg2 : arg1;
     return request<Reservation>(`${tenantPath(t)}/reservas`, { method: 'POST', body: JSON.stringify(data) }, t);
   },
+  createPublicReserva: (negocioId: string, data: any) =>
+    request<Reservation>(`/public/negocios/${encodeURIComponent(negocioId)}/reservas`, { method: 'POST', body: JSON.stringify(data) }, negocioId),
   updateReserva: (arg1: any, arg2: any, arg3?: any) => {
     const t = arg3 !== undefined ? String(arg1) : getApiTenant();
     const id = arg3 !== undefined ? String(arg2) : String(arg1);
