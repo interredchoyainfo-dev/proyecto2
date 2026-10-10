@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMesasStore } from '../../store/useMesasStore';
 import type { MesaEstado } from '../../types';
@@ -15,11 +15,12 @@ function formatMoney(n: number) {
 }
 
 export default function MozoMesas() {
-  const mesas = useMesasStore((s) => s.mesas);
+  const allMesas = useMesasStore((s) => s.mesas);
   const getPedidoByMesa = useMesasStore((s) => s.getPedidoByMesa);
   const createPedido = useMesasStore((s) => s.createPedido);
   const navigate = useNavigate();
   const { negocioId } = useParams();
+  const mesas = useMemo(() => allMesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase() === (negocioId || 'giovanni').toLowerCase()), [allMesas, negocioId]);
   const [, setTick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 2000);
@@ -27,7 +28,7 @@ export default function MozoMesas() {
   }, []);
 
   const handleMesaClick = (mesaId: string, estado: MesaEstado) => {
-    const pedido = getPedidoByMesa(mesaId);
+    const pedido = getPedidoByMesa(mesaId, negocioId);
     if (pedido) {
       navigate(`/${negocioId}/app/mozos/pedido/${pedido.id}`);
       return;
@@ -38,6 +39,7 @@ export default function MozoMesas() {
       tipoPedido: 'salon',
       mesaId,
       mozoId: 'u-mozo',
+      negocioId: negocioId || 'giovanni',
     });
     // Revertir a libre si se abrió solo para mirar — la ocupación real al agregar items
     // createPedido marca ocupada; la corregimos:
@@ -55,7 +57,7 @@ export default function MozoMesas() {
           .slice()
           .sort((a, b) => a.numero - b.numero)
           .map((mesa) => {
-            const pedido = getPedidoByMesa(mesa.id);
+            const pedido = getPedidoByMesa(mesa.id, negocioId);
             const hasItems = (pedido?.items.length || 0) > 0;
             const displayEstado =
               pedido && hasItems
