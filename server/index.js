@@ -596,12 +596,16 @@ app.use('/api', (req, res, next) => {
   const isPublicReservationCreate =
     req.method === 'POST' &&
     /^\/api\/public\/negocios\/[^/]+\/reservas\/?$/i.test(originalPath);
+  const isPublicOrderCreate =
+    req.method === 'POST' &&
+    /^\/api\/public\/negocios\/[^/]+\/pedidos\/?$/i.test(originalPath);
   if (
     originalPath.startsWith('/api/auth/') ||
     originalPath === '/api/tenants' ||
     originalPath.startsWith('/api/tenants/') ||
     originalPath === '/api/health' ||
-    isPublicReservationCreate
+    isPublicReservationCreate ||
+    isPublicOrderCreate
   ) {
     return next();
   }
@@ -1451,12 +1455,68 @@ app.get(['/api/negocios/:negocioId/pedidos', '/api/pedidos'], (req, res) => {
   res.json(result);
 });
 
-app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos'], (req, res) => {
-  const tenantId = resolveTenantId(req);
-  const p = req.body;
+app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negocios/:negocioId/pedidos'], (req, res) => {
+  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
+  const isPublicCustomerOrder = /^\/api\/public\/negocios\/[^/]+\/pedidos\/?$/i.test(originalPath);
+  const requestedTenant = resolveTenantId(req);
+  const tenantRow = isPublicCustomerOrder
+    ? db.prepare('SELECT id, isActive FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1').get(requestedTenant, requestedTenant)
+    : null;
+  if (isPublicCustomerOrder && (!tenantRow || !tenantRow.isActive)) {
+    return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: 'El negocio no existe o está suspendido.' });
+  }
+  const tenantId = tenantRow?.id || requestedTenant;
+  const p = req.body || {};
   const items = Array.isArray(p.items) ? p.items : [];
+  if (!items.length) {
+    return res.status(400).json({ success: false, code: 'EMPTY_ORDER', message: 'El pedido debe contener al menos un producto.' });
+  }
+  if (isPublicCustomerOrder && p.mesaId) {
+    const mesa = db.prepare('SELECT id FROM mesas WHERE id = ? AND negocioId = ?').get(p.mesaId, tenantId);
+    if (!mesa) return res.status(400).json({ success: false, code: 'MESA_NOT_FOUND', message: 'La mesa seleccionada no pertenece a este negocio.' });
+  }
+  const orderId = p.id || `ped-${crypto.randomUUID().slice(0, 8)}`;
 
   const orderTx = db.transaction(() => {
+    // Los reintentos del menú usan el mismo ID: no vuelven a descontar stock ni duplican el pedido.
+    if (isPublicCustomerOrder) {
+      const existingOrder = db.prepare('SELECT * FROM pedidos WHERE id = ? AND negocioId = ?').get(orderId, tenantId);
+      if (existingOrder) {
+        const currentItemIds = new Set(db.prepare('SELECT id FROM pedido_items WHERE pedidoId = ?').all(orderId).map((row) => row.id));
+        let addedTotal = 0;
+        const insNewItem = db.prepare(`
+          INSERT INTO pedido_items (
+            id, pedidoId, productoId, nombre, cantidad, precioUnitario, subtotal, notas, estadoItem, destinoComanda, enviadoCocina
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const item of items) {
+          const itemId = item.id || `item-${crypto.randomUUID().slice(0, 8)}`;
+          if (currentItemIds.has(itemId)) continue;
+          const prodId = item.productoId || item.id;
+          const qty = Math.max(1, Math.floor(Number(item.cantidad || 1)));
+          const prod = db.prepare('SELECT * FROM productos WHERE id = ? AND negocioId = ? AND disponible = 1').get(prodId, tenantId);
+          if (!prod) throw new Error(`PRODUCT_NOT_FOUND:${prodId}`);
+          if (prod.stock !== null && prod.stock !== undefined && prod.stock < qty) throw new Error(`STOCK_INSUFICIENTE:${prod.name}`);
+          const subtotal = Number(prod.price) * qty;
+          db.prepare('UPDATE productos SET stock = stock - ?, updatedAt = ? WHERE id = ? AND negocioId = ?').run(qty, new Date().toISOString(), prodId, tenantId);
+          db.prepare(`
+            INSERT INTO inventario_movimientos (id, negocioId, productoId, tipo, cantidad, motivo, createdAt)
+            VALUES (?, ?, ?, 'venta', ?, 'Pedido menú digital', ?)
+          `).run(`inv-${crypto.randomUUID().slice(0, 8)}`, tenantId, prodId, qty, new Date().toISOString());
+          insNewItem.run(itemId, orderId, prodId, prod.name, qty, Number(prod.price), subtotal, item.notas || null, 'pendiente', prod.destinoComanda || 'cocina', 1);
+          currentItemIds.add(itemId);
+          addedTotal += subtotal;
+        }
+        const now = new Date().toISOString();
+        const nextState = existingOrder.estado === 'borrador' ? 'confirmado' : existingOrder.estado;
+        db.prepare('UPDATE pedidos SET total = ?, estado = ?, updatedAt = ? WHERE id = ? AND negocioId = ?')
+          .run(Number(existingOrder.total || 0) + addedTotal, nextState, now, orderId, tenantId);
+        if (existingOrder.mesaId) db.prepare("UPDATE mesas SET estado = 'ocupada', updatedAt = ? WHERE id = ? AND negocioId = ?").run(now, existingOrder.mesaId, tenantId);
+        const latest = db.prepare('SELECT * FROM pedido_items WHERE pedidoId = ?').all(orderId);
+        return { orderId, total: Number(existingOrder.total || 0) + addedTotal, items: latest, duplicate: true };
+      }
+    }
+
     // 1. Validar y descontar stock para cada producto
     let calculatedTotal = 0;
     const validatedItems = [];
@@ -1491,18 +1551,19 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos'], (req, res) => {
       `).run(`inv-${crypto.randomUUID().slice(0, 8)}`, tenantId, prodId, qty, new Date().toISOString());
 
       validatedItems.push({
-        id: `item-${crypto.randomUUID().slice(0, 8)}`,
+        id: item.id || `item-${crypto.randomUUID().slice(0, 8)}`,
         productoId: prodId,
         nombre: prod.name,
         cantidad: qty,
         precioUnitario: unitPrice,
         subtotal,
         notas: item.notas || null,
+        estadoItem: isPublicCustomerOrder ? 'pendiente' : (item.estadoItem || 'pendiente'),
         destinoComanda: prod.destinoComanda || 'cocina',
+        enviadoCocina: isPublicCustomerOrder || item.enviadoCocina !== false,
       });
     }
 
-    const orderId = p.id || `ped-${crypto.randomUUID().slice(0, 8)}`;
     const now = new Date().toISOString();
 
     db.prepare(`
@@ -1519,7 +1580,7 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos'], (req, res) => {
       p.clienteNombre || null,
       p.clienteTelefono || null,
       p.direccionDelivery || null,
-      p.estado || 'abierto',
+      isPublicCustomerOrder ? 'confirmado' : (p.estado || 'abierto'),
       calculatedTotal,
       now,
       now
@@ -1527,16 +1588,22 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos'], (req, res) => {
 
     const insItem = db.prepare(`
       INSERT INTO pedido_items (
-        id, pedidoId, productoId, nombre, cantidad, precioUnitario, subtotal, notas, destinoComanda
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, pedidoId, productoId, nombre, cantidad, precioUnitario, subtotal, notas, estadoItem, destinoComanda, enviadoCocina
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const v of validatedItems) {
-      insItem.run(v.id, orderId, v.productoId, v.nombre, v.cantidad, v.precioUnitario, v.subtotal, v.notas, v.destinoComanda);
+      insItem.run(v.id, orderId, v.productoId, v.nombre, v.cantidad, v.precioUnitario, v.subtotal, v.notas, v.estadoItem, v.destinoComanda, v.enviadoCocina ? 1 : 0);
     }
 
-    // Si viene cobrado en POS: registrar pago y caja si hay sesión abierta
-    if (p.metodoPago && calculatedTotal > 0) {
+    // Un pedido público de mesa debe ocuparla desde el servidor; el cliente no modifica mesas protegidas.
+    if (isPublicCustomerOrder && p.tipoPedido === 'salon' && p.mesaId) {
+      db.prepare("UPDATE mesas SET estado = 'ocupada', updatedAt = ? WHERE id = ? AND negocioId = ?")
+        .run(now, p.mesaId, tenantId);
+    }
+
+    // Los pedidos públicos nunca pueden declarar un pago cobrado desde el navegador.
+    if (!isPublicCustomerOrder && p.metodoPago && calculatedTotal > 0) {
       const activeSession = db.prepare(`
         SELECT id FROM caja_sesiones WHERE negocioId = ? AND status = 'abierta' LIMIT 1
       `).get(tenantId);
@@ -1570,7 +1637,7 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos'], (req, res) => {
 
   try {
     const result = orderTx();
-    res.status(201).json({ success: true, order: result });
+    res.status(result.duplicate ? 200 : 201).json({ success: true, order: result });
   } catch (err) {
     if (err.message.startsWith('STOCK_INSUFICIENTE:')) {
       const prodName = err.message.split(':')[1];
@@ -1592,24 +1659,52 @@ app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id'], (req, res)
   if (!existing) return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
 
   const now = new Date().toISOString();
-  db.prepare(`
-    UPDATE pedidos
-    SET tipoPedido = ?, mesaId = ?, mozoId = ?, repartidorId = ?, clienteNombre = ?, clienteTelefono = ?, direccionDelivery = ?, estado = ?, total = ?, updatedAt = ?
-    WHERE id = ? AND negocioId = ?
-  `).run(
-    p.tipoPedido || existing.tipoPedido,
-    p.mesaId !== undefined ? p.mesaId : existing.mesaId,
-    p.mozoId !== undefined ? p.mozoId : existing.mozoId,
-    p.repartidorId !== undefined ? p.repartidorId : existing.repartidorId,
-    p.clienteNombre !== undefined ? p.clienteNombre : existing.clienteNombre,
-    p.clienteTelefono !== undefined ? p.clienteTelefono : existing.clienteTelefono,
-    p.direccionDelivery !== undefined ? p.direccionDelivery : existing.direccionDelivery,
-    p.estado || existing.estado,
-    p.total !== undefined ? Number(p.total) : existing.total,
-    now,
-    id,
-    tenantId
-  );
+  const updateTx = db.transaction(() => {
+    db.prepare(`
+      UPDATE pedidos
+      SET tipoPedido = ?, mesaId = ?, mozoId = ?, repartidorId = ?, clienteNombre = ?, clienteTelefono = ?, direccionDelivery = ?, estado = ?, total = ?, updatedAt = ?
+      WHERE id = ? AND negocioId = ?
+    `).run(
+      p.tipoPedido || existing.tipoPedido,
+      p.mesaId !== undefined ? p.mesaId : existing.mesaId,
+      p.mozoId !== undefined ? p.mozoId : existing.mozoId,
+      p.repartidorId !== undefined ? p.repartidorId : existing.repartidorId,
+      p.clienteNombre !== undefined ? p.clienteNombre : existing.clienteNombre,
+      p.clienteTelefono !== undefined ? p.clienteTelefono : existing.clienteTelefono,
+      p.direccionDelivery !== undefined ? p.direccionDelivery : existing.direccionDelivery,
+      p.estado || existing.estado,
+      p.total !== undefined ? Number(p.total) : existing.total,
+      now,
+      id,
+      tenantId
+    );
+
+    // Persistir los estados de cocina y los ítems agregados por el mozo en la misma transacción.
+    if (Array.isArray(p.items)) {
+      const insItem = db.prepare(`
+        INSERT INTO pedido_items (
+          id, pedidoId, productoId, nombre, cantidad, precioUnitario, subtotal, notas, estadoItem, destinoComanda, enviadoCocina
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      db.prepare('DELETE FROM pedido_items WHERE pedidoId = ?').run(id);
+      for (const item of p.items) {
+        insItem.run(
+          item.id || `item-${crypto.randomUUID().slice(0, 8)}`,
+          id,
+          item.productoId || null,
+          String(item.nombre || 'Producto'),
+          Math.max(1, Math.floor(Number(item.cantidad || 1))),
+          Number(item.precioUnitario || 0),
+          Number(item.subtotal || 0),
+          item.notas || null,
+          item.estadoItem || 'pendiente',
+          item.destinoComanda || 'cocina',
+          item.enviadoCocina === false || item.enviadoCocina === 0 ? 0 : 1
+        );
+      }
+    }
+  });
+  updateTx();
 
   const updated = db.prepare('SELECT * FROM pedidos WHERE id = ? AND negocioId = ?').get(id, tenantId);
   const items = db.prepare('SELECT * FROM pedido_items WHERE pedidoId = ?').all(id);
