@@ -103,10 +103,15 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
             espacioId: r.espacioId || r.courtId,
             negocioId: r.negocioId || activeNegocio,
           }));
-          const otherRes = useStore
-            .getState()
-            .reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== activeNegocio);
-          useStore.setState({ reservations: [...otherRes, ...normalized] });
+          const current = useStore.getState().reservations;
+          const otherRes = current.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== activeNegocio);
+          const legacyRows = current.filter((r) =>
+            (r.negocioId || 'giovanni').toLowerCase() === activeNegocio && Boolean((r as any)._legacyFirestore)
+          );
+          const byId = new Map<string, any>();
+          legacyRows.forEach((r) => byId.set(r.id, r));
+          normalized.forEach((r: any) => byId.set(r.id, r));
+          useStore.setState({ reservations: [...otherRes, ...byId.values()] });
         }
         if (Array.isArray(data.clientes) && data.clientes.length > 0) {
           useStore.setState({ clients: data.clientes });
