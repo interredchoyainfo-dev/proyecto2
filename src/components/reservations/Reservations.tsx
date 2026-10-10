@@ -43,13 +43,19 @@ export function Reservations() {
           espacioId: r.espacioId || (r as any).courtId || '',
           negocioId: tenantId,
         })) : [];
-        useStore.setState((state) => ({
-          reservationPersistenceError: null,
-          reservations: [
-            ...state.reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== tenantId),
-            ...normalized,
-          ],
-        }));
+        useStore.setState((state) => {
+          const other = state.reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== tenantId);
+          const legacy = state.reservations.filter((r) =>
+            (r.negocioId || 'giovanni').toLowerCase() === tenantId && Boolean((r as any)._legacyFirestore)
+          );
+          const byId = new Map<string, any>();
+          legacy.forEach((r) => byId.set(r.id, r));
+          normalized.forEach((r) => byId.set(r.id, r));
+          return {
+            reservationPersistenceError: null,
+            reservations: [...other, ...byId.values()],
+          };
+        });
       })
       .catch((error) => {
         if (!active) return;
