@@ -81,22 +81,24 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
             useMesasStore.setState({ pedidos: data.pedidos });
           }
         }
-        if (Array.isArray(data.espacios) && data.espacios.length > 0) {
-          const cleanEspacios = data.espacios.filter((e: any) => {
-            if (activeNegocio !== 'giovanni') {
-              if (
-                e.id.startsWith('op-') ||
-                e.id.startsWith('demo-') ||
-                ['c1', 'c2', 'c3', 'c4', 's1'].includes(e.id)
-              ) {
-                return false;
-              }
-            }
-            return true;
-          });
+        // SQLite/API es la única fuente de verdad para espacios.
+        // Reemplazar también con [] es esencial: evita que sobrevivan espacios viejos
+        // del almacenamiento local cuando el servidor confirma que el negocio no tiene ninguno.
+        if (Array.isArray(data.espacios)) {
+          const cleanEspacios = data.espacios
+            .filter((e: any) => {
+              const id = String(e?.id || '');
+              if (activeNegocio !== 'giovanni' && (
+                id.startsWith('op-') ||
+                id.startsWith('demo-') ||
+                ['c1', 'c2', 'c3', 'c4', 's1'].includes(id)
+              )) return false;
+              return true;
+            })
+            .map((e: any) => ({ ...e, negocioId: activeNegocio }));
           const otherEspacios = useEspaciosStore
             .getState()
-            .espacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase() !== activeNegocio);
+            .espacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio);
           useEspaciosStore.setState({ espacios: [...otherEspacios, ...cleanEspacios] });
         }
         if (Array.isArray(data.reservas) && data.reservas.length > 0) {
