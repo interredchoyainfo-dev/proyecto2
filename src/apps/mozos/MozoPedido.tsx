@@ -39,7 +39,7 @@ export default function MozoPedido() {
   const [payMethod, setPayMethod] = useState<'efectivo' | 'transferencia' | 'mercadopago'>('efectivo');
 
   const pedido = pedidos.find((p) => p.id === pedidoId);
-  const mesa = pedido?.mesaId ? mesas.find((m) => m.id === pedido.mesaId) : null;
+  const mesa = pedido?.mesaId ? mesas.find((m) => m.id === pedido.mesaId && (m.negocioId || 'giovanni').toLowerCase() === (negocioId || 'giovanni').toLowerCase()) : null;
 
   if (!pedido) {
     return (
