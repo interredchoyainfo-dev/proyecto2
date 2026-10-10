@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from '
 import { useParams } from 'react-router-dom';
 import type { TenantConfig, ModuleId } from '../../types';
 import { useSuperAdminStore } from '../../store/useSuperAdminStore';
+import { api } from '../../lib/api';
 
 interface ConfigContextType {
   config: TenantConfig | null;
@@ -160,20 +161,75 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // 2. Fallback to MOCK_TENANTS if any
-    const mock = MOCK_TENANTS[lowerId];
-    if (mock && mock.negocio.isActive) {
-      setConfig(mock);
-      if (mock.theme?.primaryColor) {
-        document.documentElement.style.setProperty('--color-primary', mock.theme.primaryColor);
-      }
-      setLoading(false);
-      return;
-    }
+    // 2. En navegadores nuevos/incógnito no hay estado local del SuperAdmin.
+    // Resolver el negocio desde la base persistente del servidor, sin exponer credenciales.
+    let cancelled = false;
+    api.getPublicTenant(lowerId)
+      .then((response) => {
+        if (cancelled) return;
+        const remote = response?.tenant;
+        if (!remote || !remote.isActive) {
+          throw new Error('El negocio no existe o está suspendido.');
+        }
 
-    setError(`El complejo "${negocioId}" no existe o no está registrado en la plataforma.`);
-    setConfig(null);
-    setLoading(false);
+        const tenantTheme = remote.theme || {
+          primaryColor: '#8B5CF6',
+          accentColor: '#A78BFA',
+          secondaryColor: '#121722',
+        };
+        const modules = remote.modulos || {};
+        const activeMods = Object.keys(modules).filter(
+          (key) => modules[key as ModuleId]
+        ) as ModuleId[];
+
+        const tenantConfig: TenantConfig = {
+          negocio: {
+            id: remote.id,
+            slug: remote.slug,
+            nombre: remote.nombre,
+            logoUrl: remote.logoUrl,
+            subtitulo: remote.subtitulo || 'TU LUGAR DEPORTIVO',
+            descripcion: remote.descripcion || '',
+            whatsapp: remote.whatsapp || '',
+            isActive: remote.isActive,
+            createdAt: remote.createdAt,
+            theme: tenantTheme,
+          },
+          modulos: modules,
+          activeModules: activeMods,
+          theme: tenantTheme,
+          openTime: '08:00',
+          closeTime: '00:00',
+        };
+        setConfig(tenantConfig);
+        if (tenantTheme.primaryColor) {
+          document.documentElement.style.setProperty('--color-primary', tenantTheme.primaryColor);
+        }
+        if (tenantTheme.accentColor) {
+          document.documentElement.style.setProperty('--color-accent', tenantTheme.accentColor);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Compatibilidad limitada para complejos demo incorporados en la aplicación.
+        const mock = MOCK_TENANTS[lowerId];
+        if (mock && mock.negocio.isActive) {
+          setConfig(mock);
+          if (mock.theme?.primaryColor) {
+            document.documentElement.style.setProperty('--color-primary', mock.theme.primaryColor);
+          }
+          setLoading(false);
+          return;
+        }
+        setError(`El complejo "${negocioId}" no existe o no está registrado en la plataforma.`);
+        setConfig(null);
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [negocioId, tenants]);
 
   const isModuleActive = (moduleId: ModuleId): boolean => {
