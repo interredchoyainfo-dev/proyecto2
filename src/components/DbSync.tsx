@@ -99,7 +99,7 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
             .espacios.filter((e) => (e.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio);
           useEspaciosStore.setState({ espacios: [...otherEspacios, ...cleanEspacios] });
         }
-        if (Array.isArray(data.reservas) && data.reservas.length > 0) {
+        if (Array.isArray(data.reservas)) {
           const normalized = data.reservas.map((r: any) => ({
             ...r,
             espacioId: r.espacioId || r.courtId,
@@ -185,33 +185,17 @@ export async function deleteMesaDb(id: string) {
 }
 
 export async function persistReserva(data: any) {
-  const tenant = getCurrentTenant();
-  firebaseSaveReserva(data, tenant);
-  try {
-    await api.createReserva(data);
-  } catch {
-    /* offline */
-  }
+  const tenant = String(data.negocioId || getApiTenant() || 'giovanni').toLowerCase();
+  return api.createReserva(tenant, data);
 }
 
 export async function updateReservaDb(id: string, data: any) {
-  const tenant = getCurrentTenant();
-  firebaseSaveReserva({ id, ...data }, tenant);
-  try {
-    await api.updateReserva(id, data);
-  } catch {
-    /* offline */
-  }
+  const tenant = String(data.negocioId || getApiTenant() || 'giovanni').toLowerCase();
+  return api.updateReserva(tenant, id, data);
 }
 
 export async function deleteReservaDb(id: string) {
-  const tenant = getCurrentTenant();
-  firebaseDeleteReserva(id, tenant);
-  try {
-    await api.deleteReserva(id);
-  } catch {
-    /* offline */
-  }
+  return api.deleteReserva(getApiTenant(), id);
 }
 
 export async function persistProducto(data: any, isNew: boolean) {
