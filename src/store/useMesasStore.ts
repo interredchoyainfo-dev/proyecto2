@@ -30,7 +30,7 @@ interface MesasState {
   deleteTenantMesas: (negocioId: string) => void;
 
   // Mesas
-  updateMesaEstado: (mesaId: string, estado: MesaEstado, mozoId?: string) => void;
+  updateMesaEstado: (mesaId: string, estado: MesaEstado, mozoId?: string, negocioId?: string) => void;
   getMesa: (id: string) => Mesa | undefined;
   addMesa: (data: { numero: number; sector: Mesa['sector']; capacidad: number; negocioId?: string }) => void;
   updateMesa: (id: string, data: Partial<Pick<Mesa, 'numero' | 'sector' | 'capacidad' | 'estado'>>) => void;
@@ -97,10 +97,10 @@ export const useMesasStore = create<MesasState>()(
         }));
       },
 
-      updateMesaEstado: (mesaId, estado, mozoId) =>
+      updateMesaEstado: (mesaId, estado, mozoId, negocioId) =>
         set((s) => ({
           mesas: s.mesas.map((m) =>
-            m.id === mesaId
+            m.id === mesaId && (!negocioId || (m.negocioId || 'giovanni').toLowerCase() === negocioId.toLowerCase())
               ? { ...m, estado, mozoAsignadoId: mozoId ?? m.mozoAsignadoId }
               : m
           ),
@@ -202,7 +202,7 @@ export const useMesasStore = create<MesasState>()(
         if (pedido?.mesaId) {
           const mesa = get().mesas.find((m) => m.id === pedido.mesaId);
           if (mesa && (mesa.estado === 'libre' || mesa.estado === 'reservada')) {
-            get().updateMesaEstado(pedido.mesaId, 'ocupada');
+            get().updateMesaEstado(pedido.mesaId, 'ocupada', undefined, pedido.negocioId);
           }
         }
         set((s) => {
@@ -344,7 +344,7 @@ export const useMesasStore = create<MesasState>()(
         if (pedido) {
           get().updatePedidoEstado(pedido.id, 'entregado');
         }
-        get().updateMesaEstado(mesaId, 'libre');
+        get().updateMesaEstado(mesaId, 'libre', undefined, negocioId);
         set({ activePedidoId: null });
       },
     }),
