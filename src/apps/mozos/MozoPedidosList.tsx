@@ -72,11 +72,12 @@ function tipoLabel(p: Pedido): { label: string; color: string } {
 export default function MozoPedidosList() {
   // Suscripción directa al array (reactivo)
   const pedidos = useMesasStore((s) => s.pedidos);
-  const mesas = useMesasStore((s) => s.mesas);
+  const allMesas = useMesasStore((s) => s.mesas);
   const updateItemEstado = useMesasStore((s) => s.updateItemEstado);
   const navigate = useNavigate();
   const { negocioId } = useParams();
   const currentNegocio = (negocioId || 'giovanni').toLowerCase();
+  const mesas = useMemo(() => allMesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase() === currentNegocio), [allMesas, currentNegocio]);
   const [, setTick] = useState(0);
 
   // Re-render cada 2s para tiempos y sensación en vivo
