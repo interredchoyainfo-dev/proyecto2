@@ -70,12 +70,35 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
           }
         }
         if (Array.isArray(data.mesas) && data.mesas.length > 0) {
-          useMesasStore.setState({ mesas: data.mesas });
+          const currentMesas = useMesasStore.getState().mesas;
+          const otherMesas = currentMesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio);
+          const tenantMesas = new Map(
+            currentMesas
+              .filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
+              .map((m) => [m.id, m])
+          );
+          data.mesas.forEach((mesa: any) => tenantMesas.set(mesa.id, { ...mesa, negocioId: activeNegocio }));
+          useMesasStore.setState({ mesas: [...otherMesas, ...tenantMesas.values()] });
         }
-        if (Array.isArray(data.pedidos)) {
-          if (data.pedidos.length > 0 || useMesasStore.getState().pedidos.length === 0) {
-            useMesasStore.setState({ pedidos: data.pedidos });
-          }
+        if (Array.isArray(data.pedidos) && data.pedidos.length > 0) {
+          const currentPedidos = useMesasStore.getState().pedidos;
+          const otherPedidos = currentPedidos.filter((p) => (p.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio);
+          const tenantPedidos = new Map(
+            currentPedidos
+              .filter((p) => (p.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
+              .map((p) => [p.id, p])
+          );
+          data.pedidos.forEach((incoming: any) => {
+            const pedido = { ...incoming, negocioId: activeNegocio };
+            const existing = tenantPedidos.get(pedido.id);
+            // If local state has a newer mutation, do not roll it back with a stale poll response.
+            const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
+            const remoteTime = pedido.updatedAt ? Date.parse(pedido.updatedAt) : NaN;
+            if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
+              tenantPedidos.set(pedido.id, pedido);
+            }
+          });
+          useMesasStore.setState({ pedidos: [...otherPedidos, ...tenantPedidos.values()] });
         }
         // SQLite/API es la única fuente de verdad para espacios.
         // Reemplazar también con [] es esencial: evita que sobrevivan espacios viejos
