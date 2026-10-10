@@ -123,6 +123,56 @@ try {
   });
   assert.equal(allowedTenantApi.status, 200, 'tenant token must access its own operational API');
 
+  // El menú público y los pedidos del cliente deben funcionar sin sesión de staff.
+  const publicMenuResponse = await fetch(`${baseUrl}/api/public/negocios/giovanni/menu`);
+  assert.equal(publicMenuResponse.status, 200, 'public menu must be available without a token');
+  const publicMenu = await publicMenuResponse.json();
+  assert.ok(publicMenu.productos.length > 0, 'public menu must return available products');
+  assert.ok(publicMenu.mesas.length > 0, 'public menu must return table choices');
+
+  const publicOrderPayload = {
+    id: 'smoke-public-order',
+    tipoPedido: 'mostrador',
+    clienteNombre: 'Smoke public customer',
+    estado: 'confirmado',
+    items: [{
+      id: 'smoke-public-order-item',
+      productoId: publicMenu.productos[0].id,
+      cantidad: 1,
+      estadoItem: 'pendiente',
+      enviadoCocina: true,
+    }],
+  };
+  const publicOrderResponse = await fetch(`${baseUrl}/api/public/negocios/giovanni/pedidos`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(publicOrderPayload),
+  });
+  assert.equal(publicOrderResponse.status, 201, 'public customer order must be stored in SQLite');
+  const publicOrder = await publicOrderResponse.json();
+  assert.equal(publicOrder.order.orderId, publicOrderPayload.id);
+
+  const publicOrderRetry = await fetch(`${baseUrl}/api/public/negocios/giovanni/pedidos`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(publicOrderPayload),
+  });
+  assert.equal(publicOrderRetry.status, 200, 'retrying a public order must be idempotent');
+  assert.equal((await publicOrderRetry.json()).order.duplicate, true);
+
+  const ordersAfterPublicCreate = await fetch(`${baseUrl}/api/negocios/giovanni/pedidos`, {
+    headers: {
+      authorization: `Bearer ${tenantLogin.token}`,
+      'x-negocio-id': 'giovanni',
+    },
+  });
+  assert.equal(ordersAfterPublicCreate.status, 200, 'staff must read public orders through the authenticated API');
+  const syncedOrders = await ordersAfterPublicCreate.json();
+  const savedPublicOrder = syncedOrders.find((order) => order.id === publicOrderPayload.id);
+  assert.ok(savedPublicOrder, 'public order must be visible to kitchen and waiters');
+  assert.equal(savedPublicOrder.items[0].enviadoCocina, 1, 'confirmed public order items must be dispatched to kitchen');
+
+
   const crossTenantApi = await fetch(`${baseUrl}/api/negocios/demo/sync`, {
     headers: {
       authorization: `Bearer ${tenantLogin.token}`,
@@ -368,7 +418,7 @@ try {
   assert.equal(completedReservation.notificacionWhatsApp, undefined, 'completing a reservation must not send or queue an automatic WhatsApp message');
 
 
-  console.log('API smoke tests passed: auth, tenant isolation, password leak protection, cash session persistence, fixed-turn validation/conflicts, and manual reservation completion without automatic WhatsApp sending.');
+  console.log('API smoke tests passed: auth, tenant isolation, public menu/orders, idempotent kitchen dispatch, password leak protection, cash sessions, fixed turns, and manual reservation completion.');
 } finally {
   child.kill('SIGTERM');
   await new Promise((resolve) => {
