@@ -309,7 +309,9 @@ export async function persistPedido(pedido: any) {
           const hasNewItems = (pedido.items || []).some((item: any) => !existingIds.has(item.id));
           if (hasNewItems) await api.createPublicPedido(tenant, pedido);
           await api.updatePedido(tenant, pedido.id, pedido);
-        } else if (Array.isArray(pedido.items) && pedido.items.length > 0) {
+        } else {
+          // Guardar también el borrador vacío de mesa; así el ID ya existe en SQLite
+          // antes de que el mozo agregue productos, cambie de pantalla o cobre.
           await api.createPublicPedido(tenant, pedido);
         }
         return;
