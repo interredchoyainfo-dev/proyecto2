@@ -405,10 +405,10 @@ export default function ClientMenu() {
 
       {/* Checkout sheet */}
       {showCheckout && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center">
+        <div className="fixed inset-0 z-50 flex items-end justify-center px-2 pb-8 sm:pb-10">
           <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={() => setShowCheckout(false)} />
           <div
-            className="relative rounded-t-3xl w-full max-w-lg p-5 space-y-4 max-h-[85vh] overflow-y-auto"
+            className="relative rounded-t-3xl sm:rounded-3xl w-full max-w-lg p-4 sm:p-5 space-y-3 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain"
             style={{ background: C.surfaceCard, borderTop: '1px solid rgba(255,255,255,0.08)' }}
           >
             <div className="flex items-center justify-between">
@@ -500,8 +500,8 @@ export default function ClientMenu() {
             <button
               onClick={handleOrder}
               disabled={isSubmitting || (orderType !== 'local' && !name.trim()) || (orderType === 'local' && !mesaId) || (orderType === 'delivery' && !address.trim())}
-              className="w-full h-14 rounded-2xl font-black text-lg uppercase tracking-wider disabled:opacity-40 active:scale-[0.98] transition-all"
-              style={{ background: C.accent, color: C.surfaceBase }}
+              className="sticky bottom-0 w-full min-h-14 py-3 rounded-2xl font-black text-base sm:text-lg uppercase tracking-wider disabled:opacity-40 active:scale-[0.98] transition-all shadow-lg"
+              style={{ background: C.accent, color: C.surfaceBase, boxShadow: `0 -8px 20px ${C.surfaceCard}` }}
             >
               {isSubmitting ? 'Confirmando pedido…' : 'Confirmar pedido'}
             </button>
