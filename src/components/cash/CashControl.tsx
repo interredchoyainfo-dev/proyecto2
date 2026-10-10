@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { api, getApiTenant } from '../../lib/api';
 import { useStore } from '../../store/useStore';
 import { Icon } from '../ui/Icon';
 import type { CashMovementType, PaymentMethod } from '../../types';
@@ -8,8 +9,20 @@ function formatMoney(n: number) {
 }
 
 export function CashControl() {
-  const cashSession = useStore((s) => s.cashSession);
-  const cashMovements = useStore((s) => s.cashMovements);
+  const tenantId = getApiTenant();
+  const globalCashSession = useStore((s) => s.cashSession);
+  const allCashMovements = useStore((s) => s.cashMovements);
+  const cashPersistenceError = useStore((s) => s.cashPersistenceError);
+  const cashSession = globalCashSession && (globalCashSession.negocioId || 'giovanni').toLowerCase() === tenantId
+    ? globalCashSession
+    : null;
+  const cashMovements = useMemo(
+    () => allCashMovements.filter((m) =>
+      (m.negocioId || 'giovanni').toLowerCase() === tenantId &&
+      (!cashSession || m.sessionId === cashSession.id)
+    ),
+    [allCashMovements, tenantId, cashSession?.id]
+  );
   const openCash = useStore((s) => s.openCash);
   const closeCash = useStore((s) => s.closeCash);
   const addCashMovement = useStore((s) => s.addCashMovement);
@@ -20,6 +33,41 @@ export function CashControl() {
   const [movAmount, setMovAmount] = useState(0);
   const [movMethod, setMovMethod] = useState<PaymentMethod>('efectivo');
   const [movDesc, setMovDesc] = useState('');
+  const [loadingCash, setLoadingCash] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [savingAction, setSavingAction] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoadingCash(true);
+    setLoadError('');
+    (async () => {
+      try {
+        const [session, movements] = await Promise.all([
+          api.getCajaSesion(tenantId),
+          api.getCajaMovimientos(tenantId),
+        ]);
+        if (!active) return;
+        const openSession = session?.status === 'abierta'
+          ? { ...session, negocioId: tenantId }
+          : null;
+        useStore.setState({
+          cashSession: openSession,
+          cashMovements: Array.isArray(movements)
+            ? movements.map((m: any) => ({ ...m, negocioId: tenantId }))
+            : [],
+          cashPersistenceError: null,
+        });
+      } catch (error) {
+        if (!active) return;
+        console.error('Error recuperando caja desde SQLite:', error);
+        setLoadError('No se pudo cargar la caja desde el servidor. No registres pagos hasta recuperar la conexión.');
+      } finally {
+        if (active) setLoadingCash(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [tenantId]);
 
   const ingresos = cashMovements.filter((m) => m.type === 'ingreso').reduce((s, m) => s + m.amount, 0);
   const egresos = cashMovements.filter((m) => m.type === 'egreso').reduce((s, m) => s + m.amount, 0);
@@ -28,23 +76,47 @@ export function CashControl() {
   const byMethod = (method: PaymentMethod) =>
     cashMovements.filter((m) => m.method === method && m.type === 'ingreso').reduce((s, m) => s + m.amount, 0);
 
-  const handleOpen = () => {
-    if (openAmount >= 0) openCash(openAmount);
+  const handleOpen = async () => {
+    if (openAmount < 0 || savingAction || loadingCash || loadError) return;
+    setSavingAction(true);
+    try {
+      await openCash(openAmount, tenantId);
+    } finally {
+      setSavingAction(false);
+    }
   };
 
-  const handleClose = () => {
-    closeCash(closeAmount);
+  const handleClose = async () => {
+    if (savingAction) return;
+    setSavingAction(true);
+    try {
+      await closeCash(closeAmount);
+    } finally {
+      setSavingAction(false);
+    }
   };
 
-  const handleAddMov = () => {
-    if (movAmount <= 0 || !movDesc.trim()) return;
-    addCashMovement({ type: movType, amount: movAmount, method: movMethod, description: movDesc });
-    setMovAmount(0);
-    setMovDesc('');
+  const handleAddMov = async () => {
+    if (movAmount <= 0 || !movDesc.trim() || savingAction) return;
+    setSavingAction(true);
+    try {
+      await addCashMovement({ type: movType, amount: movAmount, method: movMethod, description: movDesc });
+      if (!useStore.getState().cashPersistenceError) {
+        setMovAmount(0);
+        setMovDesc('');
+      }
+    } finally {
+      setSavingAction(false);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {(loadError || cashPersistenceError) && (
+        <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {loadError || cashPersistenceError}
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-bold">Control de Caja</h1>
         <p className="text-slate-500 dark:text-slate-400 text-sm">Apertura, cierre y movimientos diarios</p>
@@ -65,9 +137,10 @@ export function CashControl() {
             />
             <button
               onClick={handleOpen}
-              className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+              disabled={savingAction || loadingCash || Boolean(loadError)}
+              className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium"
             >
-              Abrir Caja
+              {loadingCash ? 'Verificando…' : savingAction ? 'Guardando…' : 'Abrir Caja'}
             </button>
           </div>
         </div>
@@ -141,9 +214,10 @@ export function CashControl() {
               />
               <button
                 onClick={handleAddMov}
-                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                disabled={savingAction}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium"
               >
-                Agregar
+                {savingAction ? 'Guardando…' : 'Agregar'}
               </button>
             </div>
           </div>
@@ -197,9 +271,10 @@ export function CashControl() {
               />
               <button
                 onClick={handleClose}
-                className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium"
+                disabled={savingAction}
+                className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-medium"
               >
-                Cerrar Caja
+                {savingAction ? 'Guardando…' : 'Cerrar Caja'}
               </button>
             </div>
           </div>
