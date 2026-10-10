@@ -194,7 +194,7 @@ export default function ClientReservar() {
         startTime,
         endTime: endHour,
         paymentStatus: paymentType,
-        paymentMethod: paymentType !== 'pendiente' ? 'transferencia' : 'efectivo',
+        paymentMethod: (paymentType !== 'pendiente' ? 'transferencia' : 'efectivo') as 'transferencia' | 'efectivo',
         amount,
         paidAmount: paid,
         senaPagada: paid,
