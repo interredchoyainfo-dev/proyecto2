@@ -120,6 +120,8 @@ export const useMesasStore = create<MesasState>()(
               sector: data.sector,
               capacidad: data.capacidad,
               estado: 'libre' as const,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
             },
           ],
         }));
@@ -127,7 +129,7 @@ export const useMesasStore = create<MesasState>()(
 
       updateMesa: (id, data) =>
         set((s) => ({
-          mesas: s.mesas.map((m) => (m.id === id ? { ...m, ...data } : m)),
+          mesas: s.mesas.map((m) => (m.id === id ? { ...m, ...data, updatedAt: new Date().toISOString() } : m)),
         })),
 
       deleteMesa: (id) => {
