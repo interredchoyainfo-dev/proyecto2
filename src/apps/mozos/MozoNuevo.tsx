@@ -1,22 +1,24 @@
+import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMesasStore } from '../../store/useMesasStore';
 import { Icon } from '../../components/ui/Icon';
 
 export default function MozoNuevo() {
   const createPedido = useMesasStore((s) => s.createPedido);
-  const mesas = useMesasStore((s) => s.mesas);
+  const allMesas = useMesasStore((s) => s.mesas);
   const navigate = useNavigate();
   const { negocioId } = useParams();
+  const mesas = useMemo(() => allMesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase() === (negocioId || 'giovanni').toLowerCase()), [allMesas, negocioId]);
 
   const libres = mesas.filter((m) => m.estado === 'libre');
 
   const handleMostrador = () => {
-    const id = createPedido({ tipoPedido: 'mostrador', mozoId: 'u-mozo' });
+    const id = createPedido({ tipoPedido: 'mostrador', mozoId: 'u-mozo', negocioId: negocioId || 'giovanni' });
     navigate(`/${negocioId}/app/mozos/pedido/${id}`);
   };
 
   const handleMesa = (mesaId: string) => {
-    const id = createPedido({ tipoPedido: 'salon', mesaId, mozoId: 'u-mozo' });
+    const id = createPedido({ tipoPedido: 'salon', mesaId, mozoId: 'u-mozo', negocioId: negocioId || 'giovanni' });
     navigate(`/${negocioId}/app/mozos/pedido/${id}`);
   };
 
