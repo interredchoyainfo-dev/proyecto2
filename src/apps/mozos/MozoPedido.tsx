@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useMesasStore } from '../../store/useMesasStore';
 import { useStore } from '../../store/useStore';
+import { useAuth } from '../../context/AuthContext';
 import { Icon } from '../../components/ui/Icon';
 
 function formatMoney(n: number) {
@@ -11,6 +12,7 @@ function formatMoney(n: number) {
 export default function MozoPedido() {
   const { pedidoId, negocioId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const pedidos = useMesasStore((s) => s.pedidos);
   const mesas = useMesasStore((s) => s.mesas);
   const addItemToPedido = useMesasStore((s) => s.addItemToPedido);
@@ -86,7 +88,8 @@ export default function MozoPedido() {
   };
 
   const confirmCobro = () => {
-    if (cashSession?.status === 'abierta' && pedido.total > 0) {
+    // El acceso público puede cerrar la mesa, pero solo una sesión autenticada registra caja.
+    if (user && cashSession?.status === 'abierta' && pedido.total > 0) {
       addCashMovement({
         type: 'ingreso',
         amount: pedido.total,
