@@ -75,15 +75,31 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
           useMesasStore.setState({ mesas: [...otherMesas, ...publicMesas] });
 
           if (publicMozos && Array.isArray(data.pedidos)) {
-            const otherPedidos = useMesasStore.getState().pedidos.filter(
+            const currentPedidos = useMesasStore.getState().pedidos;
+            const otherPedidos = currentPedidos.filter(
               (pedido) => (pedido.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio
             );
-            const publicPedidos = data.pedidos.map((pedido: any) => ({
-              ...pedido,
-              negocioId: activeNegocio,
-              items: Array.isArray(pedido.items) ? pedido.items : [],
-            }));
-            useMesasStore.setState({ pedidos: [...otherPedidos, ...publicPedidos] });
+            const tenantPedidos = new Map(
+              currentPedidos
+                .filter((pedido) => (pedido.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
+                .map((pedido) => [pedido.id, pedido])
+            );
+            data.pedidos.forEach((incoming: any) => {
+              const pedido = {
+                ...incoming,
+                negocioId: activeNegocio,
+                items: Array.isArray(incoming.items) ? incoming.items : [],
+              };
+              const existing = tenantPedidos.get(pedido.id);
+              const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
+              const remoteTime = pedido.updatedAt ? Date.parse(pedido.updatedAt) : NaN;
+              // No reemplazar una edición local reciente por una respuesta de sondeo vieja.
+              if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
+                tenantPedidos.set(pedido.id, pedido);
+              }
+            });
+            // Conservar pedidos locales aún en tránsito: el guardado puede tardar más que el sondeo.
+            useMesasStore.setState({ pedidos: [...otherPedidos, ...tenantPedidos.values()] });
           }
           setStatus('online');
         } catch (error) {
