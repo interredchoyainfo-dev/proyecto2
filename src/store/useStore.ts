@@ -301,9 +301,10 @@ interface AppState {
   checkoutCart: (method: PaymentMethod, reservationId?: string) => void;
   cashSession: CashSession | null;
   cashMovements: CashMovement[];
-  openCash: (amount: number, negocioId?: string) => void;
-  closeCash: (closingAmount: number) => void;
-  addCashMovement: (mov: Omit<CashMovement, 'id' | 'sessionId' | 'createdAt' | 'createdBy'>) => void;
+  cashPersistenceError: string | null;
+  openCash: (amount: number, negocioId?: string) => Promise<void>;
+  closeCash: (closingAmount: number) => Promise<void>;
+  addCashMovement: (mov: Omit<CashMovement, 'id' | 'sessionId' | 'createdAt' | 'createdBy'>) => Promise<void>;
   config: SystemConfig;
   updateConfig: (cfg: Partial<SystemConfig>) => void;
   // ─── Tenant-scoped getters ─────────────────────────────
@@ -334,6 +335,7 @@ export const useStore = create<AppState>()(
       cart: [],
       cashSession: null,
       cashMovements: [],
+      cashPersistenceError: null,
       config: initialConfig,
 
       setView: (view) => set({ currentView: view }),
@@ -468,55 +470,83 @@ export const useStore = create<AppState>()(
         });
       },
 
-      openCash: (amount, negocioId) => {
+      openCash: async (amount, negocioId) => {
+        const tenant = String(negocioId || 'giovanni').toLowerCase();
         const sesion: CashSession = {
-          id: `cs${Date.now()}`,
-          negocioId: negocioId || 'giovanni',
+          id: `caja-${tenant}-${crypto.randomUUID().slice(0, 8)}`,
+          negocioId: tenant,
           openedAt: new Date().toISOString(),
           openingAmount: amount,
           status: 'abierta' as const,
           openedBy: get().currentUser.name || get().currentUser.nombre || 'Admin',
         };
-        set({
-          cashSession: sesion,
-          cashMovements: [],
-        });
-        persistCajaSesion(sesion);
+        set({ cashPersistenceError: null });
+        try {
+          const saved = await persistCajaSesion(sesion);
+          set({
+            cashSession: { ...sesion, ...saved, negocioId: tenant },
+            cashMovements: get().cashMovements.filter((m) => (m.negocioId || 'giovanni').toLowerCase() !== tenant),
+            cashPersistenceError: null,
+          });
+        } catch (error) {
+          console.error('No se pudo abrir la caja:', error);
+          set({ cashPersistenceError: 'No se pudo guardar la apertura de caja. Verificá la conexión e intentá nuevamente.' });
+        }
       },
 
-      closeCash: (closingAmount) =>
-        set((s) => {
-          if (!s.cashSession) return s;
-          const ingresos = s.cashMovements.filter((m) => m.type === 'ingreso').reduce((sum, m) => sum + m.amount, 0);
-          const egresos = s.cashMovements.filter((m) => m.type === 'egreso').reduce((sum, m) => sum + m.amount, 0);
-          const expected = s.cashSession.openingAmount + ingresos - egresos;
-          const closed = {
-            ...s.cashSession,
-            closedAt: new Date().toISOString(),
-            closingAmount,
-            expectedAmount: expected,
-            status: 'cerrada' as const,
-          };
-          persistCajaSesion(closed);
-          return {
-            cashSession: closed,
-          };
-        }),
-
-      addCashMovement: (mov) => {
+      closeCash: async (closingAmount) => {
         const session = get().cashSession;
         if (!session || session.status !== 'abierta') return;
+        const tenant = String(session.negocioId || 'giovanni').toLowerCase();
+        const movements = get().cashMovements.filter((m) =>
+          (m.negocioId || 'giovanni').toLowerCase() === tenant && m.sessionId === session.id
+        );
+        const ingresos = movements.filter((m) => m.type === 'ingreso').reduce((sum, m) => sum + m.amount, 0);
+        const egresos = movements.filter((m) => m.type === 'egreso').reduce((sum, m) => sum + m.amount, 0);
+        const expected = session.openingAmount + ingresos - egresos;
+        const closed = {
+          ...session,
+          closedAt: new Date().toISOString(),
+          closingAmount,
+          expectedAmount: expected,
+          status: 'cerrada' as const,
+        };
+        set({ cashPersistenceError: null });
+        try {
+          const saved = await persistCajaSesion(closed);
+          set({ cashSession: { ...closed, ...saved, negocioId: tenant }, cashPersistenceError: null });
+        } catch (error) {
+          console.error('No se pudo cerrar la caja:', error);
+          set({ cashPersistenceError: 'No se pudo guardar el cierre de caja. La sesión sigue abierta en el servidor.' });
+        }
+      },
+
+      addCashMovement: async (mov) => {
+        const session = get().cashSession;
+        if (!session || session.status !== 'abierta') return;
+        const tenant = String(session.negocioId || 'giovanni').toLowerCase();
         const full = {
           ...mov,
           id: `cm${Date.now()}`,
+          negocioId: tenant,
           sessionId: session.id,
           createdAt: new Date().toISOString(),
           createdBy: get().currentUser.name || get().currentUser.nombre || 'Admin',
         };
-        set((s) => ({
-          cashMovements: [...s.cashMovements, full],
-        }));
-        persistCajaMovimiento(full);
+        set({ cashPersistenceError: null });
+        try {
+          const saved = await persistCajaMovimiento(full);
+          set((s) => ({
+            cashMovements: [
+              ...s.cashMovements.filter((m) => m.id !== saved.id),
+              { ...full, ...saved, negocioId: tenant, sessionId: session.id },
+            ],
+            cashPersistenceError: null,
+          }));
+        } catch (error) {
+          console.error('No se pudo guardar el movimiento de caja:', error);
+          set({ cashPersistenceError: 'El movimiento no se guardó. Verificá la conexión y volvé a intentarlo.' });
+        }
       },
 
       updateConfig: (cfg) => set((s) => ({ config: { ...s.config, ...cfg } })),
