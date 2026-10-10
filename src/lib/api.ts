@@ -62,6 +62,19 @@ async function request<T>(path: string, options?: RequestInit, explicitTenant?: 
     headers,
   });
 
+  // Si vence la sesión, no dejar que la interfaz siga mutando solo el estado local.
+  // Las rutas públicas de menú/reserva no deben cerrar una sesión por este control.
+  if (res.status === 401 && !path.startsWith('/public/')) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('giovanni-auth');
+      localStorage.removeItem('giovanni-token');
+      const tenant = getApiTenant();
+      if (!window.location.pathname.includes('/login')) {
+        window.location.assign(`/${tenant}/login`);
+      }
+    }
+  }
+
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     const msg = data?.message || data?.error || res.statusText;
