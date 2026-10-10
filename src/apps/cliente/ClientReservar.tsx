@@ -196,6 +196,7 @@ export default function ClientReservar() {
       // No mostramos éxito hasta que el servidor confirme que guardó la reserva.
       const saved = await api.createReserva(currentNegocio, payload);
       useStore.setState((state) => ({
+        reservationPersistenceError: null,
         reservations: [
           ...state.reservations.filter((r) => r.id !== saved.id),
           { ...payload, ...saved, negocioId: currentNegocio },
