@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useConfig } from '../../core/services/ConfigContext';
 import { useStore } from '../../store/useStore';
 import { useMesasStore } from '../../store/useMesasStore';
@@ -47,6 +47,8 @@ export default function ClientMenu() {
   const [phone, setPhone] = useState('');
   const [showCheckout, setShowCheckout] = useState(false);
   const [done, setDone] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [orderType, setOrderType] = useState<'llevar' | 'local' | 'delivery'>('llevar');
   const [address, setAddress] = useState('');
   const [mesaId, setMesaId] = useState('');
@@ -75,10 +77,15 @@ export default function ClientMenu() {
   };
 
   const handleOrder = () => {
-    if (cart.length === 0) return;
+    if (submittingRef.current || cart.length === 0) return;
     if (orderType !== 'local' && !name.trim()) return;
     if (orderType === 'local' && !mesaId) return;
     if (orderType === 'delivery' && !address.trim()) return;
+
+    // Ref blocks rapid double-clicks before React renders the disabled button.
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    try {
     const tipoPedido = orderType === 'delivery' ? 'delivery' : orderType === 'local' ? 'salon' : 'mostrador';
     let pedidoId: string;
     if (orderType === 'local' && mesaId) {
@@ -96,6 +103,13 @@ export default function ClientMenu() {
     addNotification({ title: `Nuevo pedido · ${orderType === 'llevar' ? 'Para llevar' : orderType === 'local' ? 'Comer aquí' : 'Delivery'}`, message: `${orderType === 'local' ? 'Mesa' : name}: ${cart.map((i) => `${i.qty}x ${i.name}`).join(', ')}`, type: 'info' });
     setDone(true);
     setCart([]);
+    setShowCheckout(false);
+    } catch (error) {
+      console.error('No se pudo confirmar el pedido:', error);
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   if (done) {
@@ -451,11 +465,11 @@ export default function ClientMenu() {
 
             <button
               onClick={handleOrder}
-              disabled={(orderType !== 'local' && !name.trim()) || (orderType === 'local' && !mesaId) || (orderType === 'delivery' && !address.trim())}
+              disabled={isSubmitting || (orderType !== 'local' && !name.trim()) || (orderType === 'local' && !mesaId) || (orderType === 'delivery' && !address.trim())}
               className="w-full h-14 rounded-2xl font-black text-lg uppercase tracking-wider disabled:opacity-40 active:scale-[0.98] transition-all"
               style={{ background: C.accent, color: C.surfaceBase }}
             >
-              Confirmar pedido
+              {isSubmitting ? 'Confirmando pedido…' : 'Confirmar pedido'}
             </button>
           </div>
         </div>
