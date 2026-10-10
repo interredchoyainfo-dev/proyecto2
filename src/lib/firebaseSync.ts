@@ -114,8 +114,28 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
     );
     unsubscribes.push(unsubPedidos);
 
-    // Reservas: SQLite/API es la fuente única de verdad para evitar escrituras duplicadas
-    // y estados de Firestore que pisen las reservas del servidor.
+    // Reservas guardadas antes del cambio: lectura de compatibilidad para no ocultar registros históricos.
+    // Las nuevas reservas se escriben en SQLite; si un ID existe en ambos, prevalece SQLite.
+    const unsubReservas = onSnapshot(
+      getTenantCollection('reservas', targetTenant),
+      (snap) => {
+        const legacyRows = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+          negocioId: targetTenant,
+          _legacyFirestore: true,
+        } as Reservation & { _legacyFirestore: boolean }));
+        const current = useStore.getState().reservations;
+        const other = current.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== targetTenant);
+        const currentTenantRows = current.filter((r) => (r.negocioId || 'giovanni').toLowerCase() === targetTenant);
+        const byId = new Map<string, any>();
+        legacyRows.forEach((r) => byId.set(r.id, r));
+        currentTenantRows.forEach((r) => byId.set(r.id, r));
+        useStore.setState({ reservations: [...other, ...byId.values()] });
+      },
+      (err) => console.warn(`No se pudieron leer reservas históricas de Firestore (${targetTenant}); se mantiene SQLite como fuente principal:`, err)
+    );
+    unsubscribes.push(unsubReservas);
 
     // 5. CLIENTES DEL NEGOCIO
     const unsubClientes = onSnapshot(
