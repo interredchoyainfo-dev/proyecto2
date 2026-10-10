@@ -160,12 +160,37 @@ try {
   assert.equal(publicOrderRetry.status, 200, 'retrying a public order must be idempotent');
   assert.equal((await publicOrderRetry.json()).order.duplicate, true);
 
+  // El enlace público de mozos crea borradores sin enviar automáticamente a cocina.
+  const publicWaiterOrderPayload = {
+    id: 'smoke-public-waiter-order',
+    tipoPedido: 'mostrador',
+    estado: 'borrador',
+    items: [{
+      id: 'smoke-public-waiter-order-item',
+      productoId: publicMenu.productos[0].id,
+      cantidad: 1,
+      estadoItem: 'pendiente',
+      enviadoCocina: false,
+    }],
+  };
+  const publicWaiterOrderResponse = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/pedidos`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(publicWaiterOrderPayload),
+  });
+  assert.equal(publicWaiterOrderResponse.status, 201, 'public waiter must create an order without a token');
+  assert.equal((await publicWaiterOrderResponse.json()).order.orderId, publicWaiterOrderPayload.id);
+
   // La vista de mozos debe leer pedidos y mesas sin login y permitir actualizar el estado.
   const publicMozosSyncResponse = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/sync`);
   assert.equal(publicMozosSyncResponse.status, 200, 'public waiter route must load its operational snapshot without a token');
   const publicMozosSnapshot = await publicMozosSyncResponse.json();
   const publicMozosOrder = publicMozosSnapshot.pedidos.find((order) => order.id === publicOrderPayload.id);
-  assert.ok(publicMozosOrder, 'public waiter snapshot must include the newly created order');
+  assert.ok(publicMozosOrder, 'public waiter snapshot must include the customer order');
+  const savedWaiterDraft = publicMozosSnapshot.pedidos.find((order) => order.id === publicWaiterOrderPayload.id);
+  assert.ok(savedWaiterDraft, 'public waiter snapshot must include the waiter-created order');
+  assert.equal(savedWaiterDraft.estado, 'borrador', 'public waiter orders must remain drafts until sent');
+  assert.equal(savedWaiterDraft.items[0].enviadoCocina, 0, 'draft waiter items must not be dispatched automatically');
   assert.ok(publicMozosSnapshot.mesas.length > 0, 'public waiter snapshot must include tables');
 
   const publicMozosUpdate = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/pedidos/${encodeURIComponent(publicOrderPayload.id)}`, {
