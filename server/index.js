@@ -26,12 +26,20 @@ function safeEqual(a, b) {
 
 // CORS con lista explícita de orígenes. En producción, definir CORS_ORIGINS
 // con el dominio exacto del frontend (separado por comas).
-const allowedOrigins = new Set(
-  (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3000,http://localhost:3001')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean)
-);
+const configuredOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+// El origen público de producción queda permitido explícitamente además de los
+// orígenes configurados en Render. CORS compara el origen, no la ruta /giovanni.
+const allowedOrigins = new Set([
+  'https://complejo-orcin.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  ...configuredOrigins,
+]);
 app.use(
   cors({
     origin: (origin, callback) => {
