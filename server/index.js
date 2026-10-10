@@ -605,6 +605,9 @@ app.use('/api', (req, res, next) => {
   const isPublicMozosSync =
     req.method === 'GET' &&
     /^\/api\/public\/negocios\/[^/]+\/mozos\/sync\/?$/i.test(originalPath);
+  const isPublicMozosOrderCreate =
+    req.method === 'POST' &&
+    /^\/api\/public\/negocios\/[^/]+\/mozos\/pedidos\/?$/i.test(originalPath);
   const isPublicMozosOrderUpdate =
     req.method === 'PUT' &&
     /^\/api\/public\/negocios\/[^/]+\/mozos\/pedidos\/[^/]+\/?$/i.test(originalPath);
@@ -620,6 +623,7 @@ app.use('/api', (req, res, next) => {
     isPublicOrderCreate ||
     isPublicMenuRead ||
     isPublicMozosSync ||
+    isPublicMozosOrderCreate ||
     isPublicMozosOrderUpdate ||
     isPublicMozosMesaUpdate
   ) {
@@ -1497,14 +1501,16 @@ app.get(['/api/negocios/:negocioId/pedidos', '/api/pedidos'], (req, res) => {
   res.json(result);
 });
 
-app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negocios/:negocioId/pedidos'], (req, res) => {
+app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negocios/:negocioId/pedidos', '/api/public/negocios/:negocioId/mozos/pedidos'], (req, res) => {
   const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
   const isPublicCustomerOrder = /^\/api\/public\/negocios\/[^/]+\/pedidos\/?$/i.test(originalPath);
+  const isPublicMozosOrderCreate = /^\/api\/public\/negocios\/[^/]+\/mozos\/pedidos\/?$/i.test(originalPath);
+  const isPublicOrder = isPublicCustomerOrder || isPublicMozosOrderCreate;
   const requestedTenant = resolveTenantId(req);
-  const tenantRow = isPublicCustomerOrder
+  const tenantRow = isPublicOrder
     ? db.prepare('SELECT id, isActive FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1').get(requestedTenant, requestedTenant)
     : null;
-  if (isPublicCustomerOrder && (!tenantRow || !tenantRow.isActive)) {
+  if (isPublicOrder && (!tenantRow || !tenantRow.isActive)) {
     return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: 'El negocio no existe o está suspendido.' });
   }
   const tenantId = tenantRow?.id || requestedTenant;
@@ -1513,7 +1519,7 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
   if (!items.length) {
     return res.status(400).json({ success: false, code: 'EMPTY_ORDER', message: 'El pedido debe contener al menos un producto.' });
   }
-  if (isPublicCustomerOrder && p.mesaId) {
+  if (isPublicOrder && p.mesaId) {
     const mesa = db.prepare('SELECT id FROM mesas WHERE id = ? AND negocioId = ?').get(p.mesaId, tenantId);
     if (!mesa) return res.status(400).json({ success: false, code: 'MESA_NOT_FOUND', message: 'La mesa seleccionada no pertenece a este negocio.' });
   }
@@ -1521,7 +1527,7 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
 
   const orderTx = db.transaction(() => {
     // Los reintentos del menú usan el mismo ID: no vuelven a descontar stock ni duplican el pedido.
-    if (isPublicCustomerOrder) {
+    if (isPublicOrder) {
       const existingOrder = db.prepare('SELECT * FROM pedidos WHERE id = ? AND negocioId = ?').get(orderId, tenantId);
       if (existingOrder) {
         const currentItemIds = new Set(db.prepare('SELECT id FROM pedido_items WHERE pedidoId = ?').all(orderId).map((row) => row.id));
@@ -1545,15 +1551,23 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
             INSERT INTO inventario_movimientos (id, negocioId, productoId, tipo, cantidad, motivo, createdAt)
             VALUES (?, ?, ?, 'venta', ?, 'Pedido menú digital', ?)
           `).run(`inv-${crypto.randomUUID().slice(0, 8)}`, tenantId, prodId, qty, new Date().toISOString());
-          insNewItem.run(itemId, orderId, prodId, prod.name, qty, Number(prod.price), subtotal, item.notas || null, 'pendiente', prod.destinoComanda || 'cocina', 1);
+          insNewItem.run(
+            itemId, orderId, prodId, prod.name, qty, Number(prod.price), subtotal,
+            item.notas || null,
+            isPublicCustomerOrder ? 'pendiente' : (item.estadoItem || 'pendiente'),
+            prod.destinoComanda || 'cocina',
+            isPublicCustomerOrder || item.enviadoCocina === true || item.enviadoCocina === 1 ? 1 : 0
+          );
           currentItemIds.add(itemId);
           addedTotal += subtotal;
         }
         const now = new Date().toISOString();
-        const nextState = existingOrder.estado === 'borrador' ? 'confirmado' : existingOrder.estado;
+        const nextState = isPublicCustomerOrder
+          ? (existingOrder.estado === 'borrador' ? 'confirmado' : existingOrder.estado)
+          : (p.estado || existingOrder.estado);
         db.prepare('UPDATE pedidos SET total = ?, estado = ?, updatedAt = ? WHERE id = ? AND negocioId = ?')
           .run(Number(existingOrder.total || 0) + addedTotal, nextState, now, orderId, tenantId);
-        if (existingOrder.mesaId) db.prepare("UPDATE mesas SET estado = 'ocupada', updatedAt = ? WHERE id = ? AND negocioId = ?").run(now, existingOrder.mesaId, tenantId);
+        if (existingOrder.mesaId && isPublicOrder) db.prepare("UPDATE mesas SET estado = 'ocupada', updatedAt = ? WHERE id = ? AND negocioId = ?").run(now, existingOrder.mesaId, tenantId);
         const latest = db.prepare('SELECT * FROM pedido_items WHERE pedidoId = ?').all(orderId);
         return { orderId, total: Number(existingOrder.total || 0) + addedTotal, items: latest, duplicate: true };
       }
@@ -1572,7 +1586,7 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
       if (!prod) {
         throw new Error(`PRODUCT_NOT_FOUND:${prodId}`);
       }
-      if (isPublicCustomerOrder && !prod.disponible) {
+      if (isPublicOrder && !prod.disponible) {
         throw new Error(`PRODUCT_UNAVAILABLE:${prod.name}`);
       }
 
@@ -1642,13 +1656,13 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
     }
 
     // Un pedido público de mesa debe ocuparla desde el servidor; el cliente no modifica mesas protegidas.
-    if (isPublicCustomerOrder && p.tipoPedido === 'salon' && p.mesaId) {
+    if (isPublicOrder && p.tipoPedido === 'salon' && p.mesaId) {
       db.prepare("UPDATE mesas SET estado = 'ocupada', updatedAt = ? WHERE id = ? AND negocioId = ?")
         .run(now, p.mesaId, tenantId);
     }
 
     // Los pedidos públicos nunca pueden declarar un pago cobrado desde el navegador.
-    if (!isPublicCustomerOrder && p.metodoPago && calculatedTotal > 0) {
+    if (!isPublicOrder && p.metodoPago && calculatedTotal > 0) {
       const activeSession = db.prepare(`
         SELECT id FROM caja_sesiones WHERE negocioId = ? AND status = 'abierta' LIMIT 1
       `).get(tenantId);
