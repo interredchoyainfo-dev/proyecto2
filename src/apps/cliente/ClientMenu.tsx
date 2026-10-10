@@ -36,11 +36,12 @@ export default function ClientMenu() {
   const rawProducts = useStore((s) => s.products);
   const products = useMemo(() => rawProducts.filter((p) => p.disponible !== false).map(ensureProductMedia), [rawProducts]);
   const createPedido = useMesasStore((s) => s.createPedido);
-  const mesas = useMesasStore((s) => s.mesas);
+  const allMesas = useMesasStore((s) => s.mesas);
   const addItemToPedido = useMesasStore((s) => s.addItemToPedido);
   const updatePedidoEstado = useMesasStore((s) => s.updatePedidoEstado);
   const addNotification = useNotificationStore((s) => s.addNotification);
 
+  const mesas = useMemo(() => allMesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase() === getApiTenant().toLowerCase()), [allMesas]);
   const [cart, setCart] = useState<{ id: string; name: string; price: number; qty: number; notes?: string }[]>([]);
   const [category, setCategory] = useState('all');
   const [search, setSearch] = useState('');
