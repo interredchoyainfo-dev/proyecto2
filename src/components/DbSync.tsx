@@ -235,8 +235,14 @@ export async function persistPedido(pedido: any) {
       if (typeof window !== 'undefined' && window.location.pathname.includes('/app/mozos')) {
         const snapshot = await api.sync(tenant);
         const found = (snapshot.pedidos || []).find((p: any) => p.id === pedido.id);
-        if (found) await api.updatePedido(tenant, pedido.id, pedido);
-        else if (Array.isArray(pedido.items) && pedido.items.length > 0) await api.createPublicPedido(tenant, pedido);
+        if (found) {
+          const existingIds = new Set((found.items || []).map((item: any) => item.id));
+          const hasNewItems = (pedido.items || []).some((item: any) => !existingIds.has(item.id));
+          if (hasNewItems) await api.createPublicPedido(tenant, pedido);
+          await api.updatePedido(tenant, pedido.id, pedido);
+        } else if (Array.isArray(pedido.items) && pedido.items.length > 0) {
+          await api.createPublicPedido(tenant, pedido);
+        }
         return;
       }
       await api.createPublicPedido(tenant, pedido);
