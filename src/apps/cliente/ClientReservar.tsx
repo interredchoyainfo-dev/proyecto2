@@ -216,7 +216,7 @@ export default function ClientReservar() {
 
       try {
         const tenantResponse = await api.getPublicTenant(currentNegocio);
-        const tenant = tenantResponse?.tenant;
+        const tenant = tenantResponse?.tenant || tenantResponse;
         const rawPhone = String(tenant?.whatsapp || tenant?.whatsApp || tenant?.telefonoWhatsapp || '').replace(/\D/g, '');
         const normalizedPhone = rawPhone.startsWith('54')
           ? rawPhone
