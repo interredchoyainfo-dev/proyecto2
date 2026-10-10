@@ -103,8 +103,6 @@ export default function ClientReservar() {
     [allEspacios, currentNegocio]
   );
   const updateStatus = useEspaciosStore((s) => s.updateStatus);
-  const addReservation = useStore((s) => s.addReservation);
-  const addClient = useStore((s) => s.addClient);
   const clients = useStore((s) => s.clients);
   const config = useStore((s) => s.config);
   const reservations = useStore((s) => s.reservations);
