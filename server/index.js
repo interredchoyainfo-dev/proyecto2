@@ -593,11 +593,15 @@ app.use('/api', (req, res, next) => {
   // Comprobar las rutas públicas antes de autenticar. Express puede exponer
   // req.path relativo al mount; originalUrl conserva la ruta completa.
   const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
+  const isPublicReservationCreate =
+    req.method === 'POST' &&
+    /^\/api\/public\/negocios\/[^/]+\/reservas\/?$/i.test(originalPath);
   if (
     originalPath.startsWith('/api/auth/') ||
     originalPath === '/api/tenants' ||
     originalPath.startsWith('/api/tenants/') ||
-    originalPath === '/api/health'
+    originalPath === '/api/health' ||
+    isPublicReservationCreate
   ) {
     return next();
   }
@@ -643,6 +647,27 @@ app.use('/api', (req, res, next) => {
       });
     }
   });
+});
+
+// Configuración básica del negocio: requiere autenticación y autorización del tenant por middleware.
+app.put('/api/negocios/:negocioId/configuracion', (req, res) => {
+  const tenantId = resolveTenantId(req);
+  const current = db.prepare(
+    'SELECT id, nombre, subtitulo, descripcion, whatsapp FROM negocios WHERE id = ?'
+  ).get(tenantId);
+  if (!current) return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: 'Negocio no encontrado.' });
+
+  const body = req.body || {};
+  const nombre = body.nombre !== undefined ? String(body.nombre).trim().slice(0, 120) : current.nombre;
+  const subtitulo = body.subtitulo !== undefined ? String(body.subtitulo).trim().slice(0, 180) : current.subtitulo;
+  const descripcion = body.descripcion !== undefined ? String(body.descripcion).trim().slice(0, 2000) : current.descripcion;
+  const whatsapp = body.whatsapp !== undefined ? String(body.whatsapp).trim().slice(0, 40) : current.whatsapp;
+  if (!nombre) return res.status(400).json({ success: false, code: 'INVALID_NAME', message: 'El nombre del negocio no puede quedar vacío.' });
+
+  db.prepare(
+    'UPDATE negocios SET nombre = ?, subtitulo = ?, descripcion = ?, whatsapp = ?, updatedAt = ? WHERE id = ?'
+  ).run(nombre, subtitulo, descripcion, whatsapp, new Date().toISOString(), tenantId);
+  res.json({ success: true, tenant: { id: tenantId, nombre, subtitulo, descripcion, whatsapp } });
 });
 
 // ==========================================
@@ -850,9 +875,21 @@ app.get(['/api/negocios/:negocioId/reservas', '/api/reservas'], (req, res) => {
   res.json(rows.map(rowReserva));
 });
 
-app.post(['/api/negocios/:negocioId/reservas', '/api/reservas'], (req, res) => {
-  const tenantId = resolveTenantId(req);
-  const r = req.body;
+app.post(['/api/negocios/:negocioId/reservas', '/api/public/negocios/:negocioId/reservas', '/api/reservas'], (req, res) => {
+  let tenantId = resolveTenantId(req);
+  const r = req.body || {};
+
+  // El flujo público solo puede crear reservas en un negocio activo; convertimos el slug al ID canónico.
+  if (String(req.originalUrl || '').split('?')[0].startsWith('/api/public/negocios/')) {
+    const requested = String(req.params.negocioId || '').toLowerCase().trim();
+    const publicTenant = db.prepare(
+      'SELECT id, isActive FROM negocios WHERE LOWER(id) = ? OR LOWER(slug) = ? LIMIT 1'
+    ).get(requested, requested);
+    if (!publicTenant || !publicTenant.isActive) {
+      return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: 'El negocio no existe o está suspendido.' });
+    }
+    tenantId = publicTenant.id;
+  }
   const espacioId = r.espacioId || r.courtId;
 
   if (!espacioId || !r.date || !r.startTime || !r.endTime || !r.clientName) {
