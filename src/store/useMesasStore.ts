@@ -51,10 +51,10 @@ interface MesasState {
   updateItemEstado: (pedidoId: string, itemId: string, estado: ItemEstado) => void;
   updatePedidoEstado: (pedidoId: string, estado: PedidoEstado) => void;
   removeItemFromPedido: (pedidoId: string, itemId: string) => void;
-  getPedidoByMesa: (mesaId: string) => Pedido | undefined;
+  getPedidoByMesa: (mesaId: string, negocioId?: string) => Pedido | undefined;
   getActivePedidos: (negocioId?: string) => Pedido[];
   setActivePedido: (id: string | null) => void;
-  cerrarMesa: (mesaId: string) => void;
+  cerrarMesa: (mesaId: string, negocioId?: string) => void;
 }
 
 export const useMesasStore = create<MesasState>()(
@@ -316,12 +316,17 @@ export const useMesasStore = create<MesasState>()(
           }),
         })),
 
-      getPedidoByMesa: (mesaId) =>
-        get().pedidos.find(
-          (p) =>
+      getPedidoByMesa: (mesaId, negocioId) => {
+        const tenant = String(negocioId || '').toLowerCase().trim();
+        return get().pedidos
+          .filter((p) =>
             p.mesaId === mesaId &&
-            !['entregado', 'cancelado'].includes(p.estado)
-        ),
+            (!tenant || String(p.negocioId || 'giovanni').toLowerCase().trim() === tenant) &&
+            !['entregado', 'cancelado'].includes(p.estado) &&
+            (p.items.length > 0 || p.estado !== 'borrador')
+          )
+          .sort((a, b) => Date.parse(b.updatedAt || b.createdAt) - Date.parse(a.updatedAt || a.createdAt))[0];
+      },
 
       getActivePedidos: (negocioId) => {
         const all = get().pedidos.filter((p) =>
@@ -334,8 +339,8 @@ export const useMesasStore = create<MesasState>()(
 
       setActivePedido: (id) => set({ activePedidoId: id }),
 
-      cerrarMesa: (mesaId) => {
-        const pedido = get().getPedidoByMesa(mesaId);
+      cerrarMesa: (mesaId, negocioId) => {
+        const pedido = get().getPedidoByMesa(mesaId, negocioId);
         if (pedido) {
           get().updatePedidoEstado(pedido.id, 'entregado');
         }
