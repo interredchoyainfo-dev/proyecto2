@@ -76,6 +76,7 @@ export default function MozoPedidosList() {
   const updateItemEstado = useMesasStore((s) => s.updateItemEstado);
   const navigate = useNavigate();
   const { negocioId } = useParams();
+  const currentNegocio = (negocioId || 'giovanni').toLowerCase();
   const [, setTick] = useState(0);
 
   // Re-render cada 2s para tiempos y sensación en vivo
@@ -86,11 +87,12 @@ export default function MozoPedidosList() {
 
   const activos = useMemo(() => {
     return pedidos
+      .filter((p) => (p.negocioId || 'giovanni').toLowerCase() === currentNegocio)
       .filter((p) => !['entregado', 'cancelado'].includes(p.estado) || p.items.some((i) => i.estadoItem === 'listo'))
-      .filter((p) => p.items.length > 0 || p.estado === 'borrador')
+      .filter((p) => p.items.length > 0)
       .slice()
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [pedidos]);
+  }, [pedidos, currentNegocio]);
 
   // Priorizar los que tienen algo listo
   const sorted = useMemo(() => {
