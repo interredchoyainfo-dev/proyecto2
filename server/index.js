@@ -308,6 +308,42 @@ app.get('/api/auth/me', authenticate, (req, res) => {
   res.json({ success: true, user: req.user });
 });
 
+// Configuración pública mínima para resolver /:negocioId también en navegadores nuevos/incógnito.
+// No expone credenciales ni permite modificar el negocio.
+app.get('/api/public/tenants/:slug', (req, res) => {
+  const target = String(req.params.slug || '').toLowerCase().trim();
+  const row = db.prepare(
+    'SELECT id, slug, nombre, logoUrl, subtitulo, descripcion, whatsapp, plan, themeJson, modulosJson, isActive, createdAt FROM negocios WHERE LOWER(id) = ? OR LOWER(slug) = ? LIMIT 1'
+  ).get(target, target);
+
+  if (!row || !row.isActive) {
+    return res.status(404).json({
+      ok: false,
+      code: 'TENANT_NOT_FOUND',
+      message: 'El negocio no existe o está suspendido.',
+    });
+  }
+
+  const modulos = row.modulosJson ? JSON.parse(row.modulosJson) : {};
+  return res.json({
+    ok: true,
+    tenant: {
+      id: row.id,
+      slug: row.slug,
+      nombre: row.nombre,
+      logoUrl: row.logoUrl || undefined,
+      subtitulo: row.subtitulo || 'TU LUGAR DEPORTIVO',
+      descripcion: row.descripcion || '',
+      whatsapp: row.whatsapp || '',
+      plan: row.plan || 'trial',
+      isActive: true,
+      theme: row.themeJson ? JSON.parse(row.themeJson) : {},
+      modulos,
+      createdAt: row.createdAt,
+    },
+  });
+});
+
 // ==========================================
 // 2. GESTIÓN DE TENANTS / SAAS (/api/tenants)
 // ==========================================
