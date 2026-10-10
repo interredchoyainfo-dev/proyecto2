@@ -65,14 +65,25 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
             : await api.getPublicMenu(activeNegocio);
           if (cancelled) return;
           useStore.setState({ products: data.productos || [] });
-          const otherMesas = useMesasStore.getState().mesas.filter(
+          const currentMesas = useMesasStore.getState().mesas;
+          const otherMesas = currentMesas.filter(
             (mesa) => (mesa.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio
           );
-          const publicMesas = (data.mesas || []).map((mesa: any) => ({
-            ...mesa,
-            negocioId: activeNegocio,
-          }));
-          useMesasStore.setState({ mesas: [...otherMesas, ...publicMesas] });
+          const tenantMesas = new Map(
+            currentMesas
+              .filter((mesa) => (mesa.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
+              .map((mesa) => [mesa.id, mesa])
+          );
+          (data.mesas || []).forEach((incoming: any) => {
+            const mesa = { ...incoming, negocioId: activeNegocio };
+            const existing = tenantMesas.get(mesa.id);
+            const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
+            const remoteTime = mesa.updatedAt ? Date.parse(mesa.updatedAt) : NaN;
+            if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
+              tenantMesas.set(mesa.id, mesa);
+            }
+          });
+          useMesasStore.setState({ mesas: [...otherMesas, ...tenantMesas.values()] });
 
           if (publicMozos && Array.isArray(data.pedidos)) {
             const currentPedidos = useMesasStore.getState().pedidos;
@@ -145,7 +156,15 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
               .filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
               .map((m) => [m.id, m])
           );
-          data.mesas.forEach((mesa: any) => tenantMesas.set(mesa.id, { ...mesa, negocioId: activeNegocio }));
+          data.mesas.forEach((incoming: any) => {
+            const mesa = { ...incoming, negocioId: activeNegocio };
+            const existing = tenantMesas.get(mesa.id);
+            const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
+            const remoteTime = mesa.updatedAt ? Date.parse(mesa.updatedAt) : NaN;
+            if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
+              tenantMesas.set(mesa.id, mesa);
+            }
+          });
           useMesasStore.setState({ mesas: [...otherMesas, ...tenantMesas.values()] });
         }
         if (Array.isArray(data.pedidos) && data.pedidos.length > 0) {
