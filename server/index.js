@@ -1518,10 +1518,10 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
   const items = Array.isArray(p.items) ? p.items : [];
   // Los borradores de mesa del mozo se guardan aunque todavía no tengan ítems.
   // Esto evita que una navegación/sincronización deje un pedido solo en memoria.
-  const isEmptyWaiterDraft = isPublicMozosOrderCreate &&
+  const isEmptyTableDraft =
     p.estado === 'borrador' && p.tipoPedido === 'salon' && Boolean(p.mesaId) &&
     items.length === 0;
-  if (!items.length && !isEmptyWaiterDraft) {
+  if (!items.length && !isEmptyTableDraft) {
     return res.status(400).json({ success: false, code: 'EMPTY_ORDER', message: 'El pedido debe contener al menos un producto.' });
   }
   if (isPublicOrder && p.mesaId) {
