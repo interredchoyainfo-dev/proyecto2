@@ -414,7 +414,7 @@ export default function MesasPage() {
                                 relatedPedidoId: pedidoActivo.id,
                               });
                             }
-                            cerrarMesa(selectedMesa.id);
+                            cerrarMesa(selectedMesa.id, currentNegocio);
                             setSelectedMesaId(null);
                           }}
                           className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-500 transition-colors"
