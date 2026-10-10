@@ -114,20 +114,8 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
     );
     unsubscribes.push(unsubPedidos);
 
-    // 4. RESERVAS DEL NEGOCIO
-    const unsubReservas = onSnapshot(
-      getTenantCollection('reservas', targetTenant),
-      (snap) => {
-        if (!snap.empty) {
-          const reservations = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Reservation));
-          useStore.setState({ reservations });
-        } else {
-          seedInitialTenantCollectionIfEmpty('reservas', targetTenant);
-        }
-      },
-      (err) => console.warn(`Firestore reservas error (${targetTenant}):`, err)
-    );
-    unsubscribes.push(unsubReservas);
+    // Reservas: SQLite/API es la fuente única de verdad para evitar escrituras duplicadas
+    // y estados de Firestore que pisen las reservas del servidor.
 
     // 5. CLIENTES DEL NEGOCIO
     const unsubClientes = onSnapshot(
@@ -334,13 +322,9 @@ export async function firebaseDeletePedido(id: string, tenantId?: string) {
   }
 }
 
-export async function firebaseSaveReserva(reserva: Reservation, tenantId?: string) {
-  try {
-    const tid = tenantId || getCurrentTenant();
-    await setDoc(getTenantDoc('reservas', reserva.id, tid), sanitize(reserva), { merge: true });
-  } catch (err) {
-    console.error('Error al guardar reserva en Firestore:', err);
-  }
+export async function firebaseSaveReserva(_reserva: Reservation, _tenantId?: string) {
+  // Compatibilidad temporal: las reservas se persisten únicamente en SQLite/API.
+  return;
 }
 
 export async function firebaseDeleteReserva(id: string, tenantId?: string) {
