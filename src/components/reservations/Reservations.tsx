@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useStore } from '../../store/useStore';
@@ -19,9 +19,46 @@ const paymentBadge: Record<string, string> = {
 };
 
 export function Reservations() {
-  const reservations = useStore((s) => s.reservations);
+  const allReservations = useStore((s) => s.reservations);
   const clients = useStore((s) => s.clients);
   const { negocioId } = useParams<{ negocioId: string }>();
+  const tenantId = (negocioId || 'giovanni').toLowerCase();
+  const reservations = useMemo(
+    () => allReservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() === tenantId),
+    [allReservations, tenantId]
+  );
+  const [reservationsLoading, setReservationsLoading] = useState(true);
+  const [reservationsLoadError, setReservationsLoadError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setReservationsLoading(true);
+    setReservationsLoadError('');
+    api.getReservas(tenantId)
+      .then((rows) => {
+        if (!active) return;
+        const normalized = Array.isArray(rows) ? rows.map((r) => ({
+          ...r,
+          espacioId: r.espacioId || (r as any).courtId || '',
+          negocioId: tenantId,
+        })) : [];
+        useStore.setState((state) => ({
+          reservations: [
+            ...state.reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== tenantId),
+            ...normalized,
+          ],
+        }));
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error('No se pudieron cargar las reservas desde SQLite:', error);
+        setReservationsLoadError('No se pudieron cargar las reservas del servidor. Revisá la conexión antes de crear o modificar reservas.');
+      })
+      .finally(() => {
+        if (active) setReservationsLoading(false);
+      });
+    return () => { active = false; };
+  }, [tenantId]);
   const tenants = useSuperAdminStore((s) => s.tenants);
   const business = tenants.find((t) => t.slug.toLowerCase() === (negocioId || 'giovanni').toLowerCase() || t.id.toLowerCase() === (negocioId || 'giovanni').toLowerCase());
   const [completionNotice, setCompletionNotice] = useState('');
@@ -161,6 +198,14 @@ export function Reservations() {
         </div>
       </div>
 
+      {reservationsLoadError && (
+        <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {reservationsLoadError}
+        </div>
+      )}
+      {reservationsLoading && (
+        <p className="text-sm text-slate-500">Cargando reservas guardadas…</p>
+      )}
       {showFixedTurnos && <FixedTurnos />}
 
       {/* Controls */}
