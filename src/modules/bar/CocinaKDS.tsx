@@ -73,10 +73,10 @@ export default function CocinaKDS() {
     return mesas.find((m) => m.id === mesaId)?.numero ?? '?';
   };
 
+  // This KDS is the single dispatch queue for orders. Include beverages and bar items too:
+  // excluding destinoComanda="bar" made confirmed drinks disappear from the only kitchen screen.
   const cocinaItems = (p: Pedido) =>
-    p.items.filter(
-      (i) => i.destinoComanda === 'cocina' || i.destinoComanda === 'ambos' || !i.destinoComanda
-    );
+    p.estado === 'borrador' ? [] : p.items.filter((i) => i.enviadoCocina !== false);
 
   const buildCards = useCallback((): Record<ColKey, CardData[]> => {
     const result: Record<ColKey, CardData[]> = {
