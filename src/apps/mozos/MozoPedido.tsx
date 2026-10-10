@@ -52,7 +52,7 @@ export default function MozoPedido() {
 
   const categories = ['all', ...Array.from(new Set(products.map((p) => p.category)))];
   const filtered = category === 'all' ? products : products.filter((p) => p.category === category);
-  const pendientes = pedido.items.filter((i) => i.estadoItem === 'pendiente').length;
+  const pendientes = pedido.items.filter((i) => i.estadoItem === 'pendiente' && !i.enviadoCocina).length;
 
   const flash = (text: string) => {
     setMsg(text);
@@ -173,7 +173,7 @@ export default function MozoPedido() {
                       item.estadoItem === 'pendiente' ? 'text-red-500' :
                       'text-slate-500'
                     }`}>
-                      {item.estadoItem === 'pendiente' && 'Pendiente enviar'}
+                      {item.estadoItem === 'pendiente' && (item.enviadoCocina ? 'En cocina' : 'Pendiente enviar')}
                       {item.estadoItem === 'en_marcha' && 'En preparación'}
                       {item.estadoItem === 'listo' && '✓ Listo para retirar'}
                       {item.estadoItem === 'entregado' && 'Retirado'}

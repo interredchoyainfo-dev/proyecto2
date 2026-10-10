@@ -260,6 +260,8 @@ export interface DetallePedido {
   subtotal: number;
   notas?: string;
   estadoItem: ItemEstado;
+  /** True once this line has been dispatched to the kitchen/bar queue. */
+  enviadoCocina?: boolean;
   destinoComanda?: 'cocina' | 'bar' | 'ambos';
 }
 

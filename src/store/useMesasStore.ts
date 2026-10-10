@@ -145,9 +145,9 @@ export const useMesasStore = create<MesasState>()(
           pedidos: s.pedidos.map((p) => {
             if (p.id !== pedidoId) return p;
             const items = p.items.map((i) => {
-              if (i.estadoItem === 'pendiente') {
+              if (i.estadoItem === 'pendiente' && !i.enviadoCocina) {
                 count++;
-                return { ...i, estadoItem: 'pendiente' as const };
+                return { ...i, enviadoCocina: true };
               }
               return i;
             });
@@ -209,7 +209,11 @@ export const useMesasStore = create<MesasState>()(
           const pedidos = s.pedidos.map((p) => {
             if (p.id !== pedidoId) return p;
 
-            const existing = p.items.find((i) => i.productoId === product.id && i.notas === notas);
+            // Only merge quantities while the order is still a draft. Once confirmed,
+            // another addition must become a new kitchen line, even for the same product.
+            const existing = p.estado === 'borrador'
+              ? p.items.find((i) => i.productoId === product.id && i.notas === notas && i.estadoItem === 'pendiente' && !i.enviadoCocina)
+              : undefined;
             let items: DetallePedido[];
 
             if (existing) {
@@ -233,6 +237,8 @@ export const useMesasStore = create<MesasState>()(
                 subtotal: product.price * cantidad,
                 notas,
                 estadoItem: 'pendiente',
+                // New lines on an already-confirmed order go straight to the live kitchen queue.
+                enviadoCocina: p.estado !== 'borrador',
                 destinoComanda: product.destinoComanda || (product.category === 'comida' ? 'cocina' : 'bar'),
               };
               items = [...p.items, newItem];
@@ -283,7 +289,15 @@ export const useMesasStore = create<MesasState>()(
         set((s) => ({
           pedidos: s.pedidos.map((p) =>
             p.id === pedidoId
-              ? { ...p, estado, updatedAt: new Date().toISOString() }
+              ? {
+                  ...p,
+                  estado,
+                  // Confirming from the customer menu dispatches every pending line once.
+                  items: estado !== 'borrador' && !['cancelado', 'entregado'].includes(estado)
+                    ? p.items.map((i) => i.estadoItem === 'pendiente' ? { ...i, enviadoCocina: true } : i)
+                    : p.items,
+                  updatedAt: new Date().toISOString(),
+                }
               : p
           ),
         })),
