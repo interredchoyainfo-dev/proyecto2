@@ -86,57 +86,10 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
     );
     unsubscribes.push(unsubProductos);
 
-    // 2. MESAS DEL NEGOCIO
-    const unsubMesas = onSnapshot(
-      getTenantCollection('mesas', targetTenant),
-      (snap) => {
-        if (!snap.empty) {
-          const incomingMesas = snap.docs.map((d) => ({ id: d.id, ...d.data(), negocioId: targetTenant } as Mesa));
-          const currentMesas = useMesasStore.getState().mesas;
-          const otherMesas = currentMesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() !== targetTenant);
-          const tenantMesas = new Map(
-            currentMesas
-              .filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() === targetTenant)
-              .map((m) => [m.id, m])
-          );
-          incomingMesas.forEach((mesa) => tenantMesas.set(mesa.id, mesa));
-          useMesasStore.setState({ mesas: [...otherMesas, ...tenantMesas.values()] });
-        } else {
-          seedInitialTenantCollectionIfEmpty('mesas', targetTenant);
-        }
-      },
-      (err) => console.warn(`Firestore mesas error (${targetTenant}):`, err)
-    );
-    unsubscribes.push(unsubMesas);
-
-    // 3. PEDIDOS DEL NEGOCIO
-    const unsubPedidos = onSnapshot(
-      getTenantCollection('pedidos', targetTenant),
-      (snap) => {
-        if (!snap.empty) {
-          const incomingPedidos = snap.docs.map((d) => ({ id: d.id, ...d.data(), negocioId: targetTenant } as Pedido));
-          const currentPedidos = useMesasStore.getState().pedidos;
-          const otherPedidos = currentPedidos.filter((p) => (p.negocioId || 'giovanni').toLowerCase().trim() !== targetTenant);
-          const tenantPedidos = new Map(
-            currentPedidos
-              .filter((p) => (p.negocioId || 'giovanni').toLowerCase().trim() === targetTenant)
-              .map((p) => [p.id, p])
-          );
-          incomingPedidos.forEach((pedido) => {
-            const existing = tenantPedidos.get(pedido.id);
-            const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
-            const remoteTime = pedido.updatedAt ? Date.parse(pedido.updatedAt) : NaN;
-            if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
-              tenantPedidos.set(pedido.id, pedido);
-            }
-          });
-          useMesasStore.setState({ pedidos: [...otherPedidos, ...tenantPedidos.values()] });
-        }
-      },
-      (err) => console.warn(`Firestore pedidos error (${targetTenant}):`, err)
-    );
-    unsubscribes.push(unsubPedidos);
-
+    // Mesas y pedidos operativos se sincronizan desde la API SQLite autenticada.
+    // No abrir listeners Firestore para estas colecciones: evita lecturas duplicadas y
+    // que una copia antigua sobrescriba el circuito único de pedidos.
+    
     // Reservas guardadas antes del cambio: lectura de compatibilidad para no ocultar registros históricos.
     // Las nuevas reservas se escriben en SQLite; si un ID existe en ambos, prevalece SQLite.
     const unsubReservas = onSnapshot(
