@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, getApiTenant, setApiTenant } from '../lib/api';
+import { api, getApiTenant, getAuthToken, setApiTenant } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { useStore } from '../store/useStore';
 import { useMesasStore } from '../store/useMesasStore';
 import { useEspaciosStore } from '../store/useEspaciosStore';
@@ -10,9 +11,6 @@ import {
   getCurrentTenant,
   firebaseSaveProducto,
   firebaseDeleteProducto,
-  firebaseSaveMesa,
-  firebaseSavePedido,
-  firebaseDeletePedido,
   firebaseSaveCliente,
   firebaseDeleteCliente,
   firebaseSaveEspacio,
@@ -31,6 +29,7 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
   const routeParams = useParams<{ negocioId?: string }>();
   const activeNegocio = (propNegocioId || routeParams.negocioId || getApiTenant() || 'giovanni').toLowerCase().trim();
 
+  const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState<'connecting' | 'online' | 'offline'>('connecting');
 
   useEffect(() => {
@@ -46,7 +45,15 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
       console.warn(`Error iniciando Firestore para ${activeNegocio}:`, e);
     }
 
-    // 2. Respaldo y carga inicial desde SQLite de este negocio
+    // La API protegida solo se consulta después de restaurar una sesión válida.
+    // El portal público puede seguir usando el catálogo legado de Firestore, pero no debe
+    // generar peticiones operativas que el backend correctamente rechaza con 401.
+    if (authLoading || !user) {
+      setStatus('connecting');
+      return;
+    }
+
+    // 2. Fuente de verdad operativa: SQLite por API autenticada.
     let cancelled = false;
     let errorCount = 0;
     let lastPayload = '';
@@ -146,8 +153,9 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
         if (Array.isArray(data.ofertas) && data.ofertas.length > 0) {
           useOfertasStore.setState({ ofertas: data.ofertas });
         }
-      } catch {
+      } catch (error) {
         errorCount++;
+        if (errorCount === 1) console.warn(`[DbSync] No se pudo sincronizar ${activeNegocio}; se reintentará:`, error);
         if (errorCount >= 3) setStatus('offline');
       }
     };
@@ -155,14 +163,15 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
     pull();
     const interval = setInterval(() => {
       if (errorCount < 3) pull();
-    }, 20000);
+    }, 5000);
 
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [activeNegocio]);
+  }, [activeNegocio, user?.id, authLoading]);
 
+  if (!authLoading && !user) return null;
   if (status === 'online') return null;
   return (
     <div className="fixed bottom-20 right-3 z-[200] px-2.5 py-1 rounded-full text-[10px] font-medium shadow-lg bg-amber-500/90 text-black">
@@ -173,36 +182,42 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
 
 /** Guarda un pedido completo en Firebase y API local del negocio */
 export async function persistPedido(pedido: any) {
-  const tenant = getCurrentTenant();
-  firebaseSavePedido(pedido, tenant);
+  const tenant = String(pedido.negocioId || getCurrentTenant()).toLowerCase();
   try {
-    const existing = await api.getPedidos();
+    // El menú del cliente no tiene sesión de staff: usa un endpoint público limitado
+    // a crear pedidos confirmados, con precio/stock validados por el servidor.
+    if (!getAuthToken()) {
+      await api.createPublicPedido(tenant, pedido);
+      return;
+    }
+    const existing = await api.getPedidos(tenant);
     const found = existing.find((p: any) => p.id === pedido.id);
-    if (found) await api.updatePedido(pedido.id, pedido);
-    else await api.createPedido(pedido);
-  } catch {
-    /* offline ok */
+    if (found) await api.updatePedido(tenant, pedido.id, pedido);
+    else await api.createPedido(tenant, pedido);
+  } catch (error) {
+    console.error(`[Pedidos] No se pudo guardar el pedido ${pedido.id} en ${tenant}:`, error);
   }
 }
 
 export async function deletePedidoDb(id: string) {
-  const tenant = getCurrentTenant();
-  firebaseDeletePedido(id, tenant);
+  if (!getAuthToken()) return;
   try {
     await api.deletePedido(id);
-  } catch {
-    /* offline ok */
+  } catch (error) {
+    console.error(`[Pedidos] No se pudo eliminar el pedido ${id}:`, error);
   }
 }
 
 export async function persistMesa(id: string, data: any, isNew = false) {
-  const tenant = getCurrentTenant();
-  firebaseSaveMesa({ id, ...data }, tenant);
+  // Los clientes públicos no pueden mutar mesas directamente. El endpoint de pedido
+  // marca la mesa ocupada dentro de la misma transacción de creación del pedido.
+  if (!getAuthToken()) return;
+  const tenant = String(data.negocioId || getCurrentTenant()).toLowerCase();
   try {
-    if (isNew) await api.createMesa({ id, ...data });
-    else await api.updateMesa(id, data);
-  } catch {
-    /* offline */
+    if (isNew) await api.createMesa(tenant, { id, ...data });
+    else await api.updateMesa(tenant, id, data);
+  } catch (error) {
+    console.error(`[Mesas] No se pudo guardar la mesa ${id} en ${tenant}:`, error);
   }
 }
 
