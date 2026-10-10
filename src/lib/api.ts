@@ -101,6 +101,8 @@ export const api = {
   getTenants: () => request<{ ok: boolean; tenants: any[] }>('/tenants'),
   getTenant: (id: string) => request<any>(`/tenants/${encodeURIComponent(id)}`),
   getPublicTenant: (slug: string) => request<{ ok: boolean; tenant: any }>(`/public/tenants/${encodeURIComponent(slug)}`, undefined, slug),
+  getPublicMenu: (slug: string) =>
+    request<{ productos: Product[]; mesas: Mesa[] }>(`/public/negocios/${encodeURIComponent(slug)}/menu`, undefined, slug),
   createTenant: (data: any) =>
     request('/tenants', { method: 'POST', body: JSON.stringify(data) }),
   updateTenant: (id: string, data: any) =>
