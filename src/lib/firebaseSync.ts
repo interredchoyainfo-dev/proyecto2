@@ -11,7 +11,6 @@ import {
 import { firestore } from './firebase';
 import { useStore } from '../store/useStore';
 import { useMesasStore } from '../store/useMesasStore';
-import { useEspaciosStore } from '../store/useEspaciosStore';
 import { useOfertasStore } from '../store/useOfertasStore';
 import { getApiTenant, setApiTenant } from './api';
 import type { Product, Mesa, Pedido, Reservation, Client, Espacio, CashSession, CashMovement } from '../types';
