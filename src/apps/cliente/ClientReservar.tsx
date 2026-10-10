@@ -54,23 +54,33 @@ function metaFor(type: string) {
   return SPACE_META[type] || { tag: 'ESPACIO', blurb: 'Reservá tu turno', img: 'https://images.unsplash.com/photo-1461896836934-ffe607ba3671?w=800&q=80', icon: 'place', accentColor: '#FBBF24' };
 }
 
-function getAvailableHours(date: string, espacioId: string, reservations: { espacioId?: string; courtId?: string; date?: string; startTime: string }[]) {
+function getAvailableHours(
+  date: string,
+  espacioId: string,
+  reservations: { espacioId?: string; courtId?: string; date?: string; startTime: string; personas?: number; estado?: string; status?: string }[],
+  capacidad?: number,
+) {
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
   const currentHour = now.getHours();
   const currentMin = now.getMinutes();
-  const booked = new Set(
-    reservations.filter((r) => (r.espacioId === espacioId || (r as any).courtId === espacioId) && r.date === date).map((r) => r.startTime)
+  const activeForSpace = reservations.filter((r) =>
+    (r.espacioId === espacioId || r.courtId === espacioId) &&
+    r.date === date &&
+    !['cancelada', 'cancelado', 'canceled', 'cancelled'].includes(String(r.estado || r.status || '').toLowerCase())
   );
   return ALL_HOURS.filter((h) => {
-    if (booked.has(h)) return false;
     if (date < today) return false;
     if (date === today) {
       const [hh, mm] = h.split(':').map(Number);
-      if (hh < currentHour) return false;
-      if (hh === currentHour && mm <= currentMin) return false;
+      if (hh < currentHour || (hh === currentHour && mm <= currentMin)) return false;
     }
-    return true;
+    const bookingsAtHour = activeForSpace.filter((r) => r.startTime === h);
+    if (capacidad && capacidad > 0) {
+      const occupied = bookingsAtHour.reduce((sum, r) => sum + Math.max(1, Number(r.personas) || 1), 0);
+      return occupied < capacidad;
+    }
+    return bookingsAtHour.length === 0;
   });
 }
 
@@ -139,10 +149,10 @@ export default function ClientReservar() {
   const amount = espacio?.usaCapacidad && espacio?.precioPorPersona ? basePrice * Math.max(1, personas) : basePrice;
 
   const ocupadosEnTurno = espacio?.usaCapacidad
-    ? reservations.filter((r) => (r.espacioId === espacioId || (r as any).courtId === espacioId) && r.date === date && r.startTime === startTime).reduce((s, r) => s + (r.personas || 1), 0)
+    ? reservations.filter((r) => (r.espacioId === espacioId || (r as any).courtId === espacioId) && r.date === date && r.startTime === startTime && !['cancelada', 'cancelado', 'canceled', 'cancelled'].includes(String((r as any).estado || (r as any).status || '').toLowerCase())).reduce((s, r) => s + Math.max(1, Number(r.personas) || 1), 0)
     : 0;
   const cuposLibres = espacio?.usaCapacidad ? Math.max(0, (espacio.capacidad || 0) - ocupadosEnTurno) : null;
-  const availableHours = espacioId ? getAvailableHours(date, espacioId, reservations) : [];
+  const availableHours = espacioId ? getAvailableHours(date, espacioId, reservations.filter((r) => (r.negocioId || 'giovanni').toLowerCase() === currentNegocio), espacio?.usaCapacidad ? espacio.capacidad : undefined) : [];
 
   const dayPrice = (id: string) => {
     const p = config.prices?.find((x) => x.espacioId === id || (x as any).courtId === id);
@@ -207,7 +217,7 @@ export default function ClientReservar() {
       try {
         const tenantResponse = await api.getPublicTenant(currentNegocio);
         const tenant = tenantResponse?.tenant;
-        const rawPhone = String(tenant?.whatsapp || '').replace(/\\D/g, '');
+        const rawPhone = String(tenant?.whatsapp || tenant?.whatsApp || tenant?.telefonoWhatsapp || '').replace(/\D/g, '');
         const normalizedPhone = rawPhone.startsWith('54')
           ? rawPhone
           : rawPhone.length === 10
@@ -229,7 +239,7 @@ export default function ClientReservar() {
             `Seña abonada: ${formatMoney(paid)}`,
             `Saldo pendiente: ${formatMoney(Math.max(0, amount - paid))}`,
             `Estado de pago: ${paymentType}`,
-          ].join('\\n');
+          ].join('\n');
           setWhatsAppUrl(`https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`);
         }
       } catch (error) {
