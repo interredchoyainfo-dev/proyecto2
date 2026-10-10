@@ -3,6 +3,12 @@ import type { Espacio, Reservation, Product, Mesa, Client, Oferta } from '../typ
 export const API_BASE_URL = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3001/api' : '')).replace(/\/+$/, '');
 const API_URL = API_BASE_URL;
 
+function isPublicMozos(): boolean {
+  return typeof window !== 'undefined' &&
+    window.location.pathname.includes('/app/mozos') &&
+    !getAuthToken();
+}
+
 let activeTenant: string = 'giovanni';
 
 /** Establece explícitamente el tenant activo para las llamadas a la API */
@@ -94,7 +100,10 @@ export const api = {
   // Tenant Snapshot
   sync: (tenantId?: string) => {
     const t = tenantId || getApiTenant();
-    return request<SyncPayload>(`${tenantPath(t)}/sync`, undefined, t);
+    const path = isPublicMozos()
+      ? `/public/negocios/${encodeURIComponent(t)}/mozos/sync`
+      : `${tenantPath(t)}/sync`;
+    return request<SyncPayload>(path, undefined, t);
   },
 
   // Tenants Management (SuperAdmin)
@@ -208,7 +217,10 @@ export const api = {
     const t = arg3 !== undefined ? String(arg1) : getApiTenant();
     const id = arg3 !== undefined ? String(arg2) : String(arg1);
     const data = arg3 !== undefined ? arg3 : arg2;
-    return request<Mesa>(`${tenantPath(t)}/mesas/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+    const path = isPublicMozos()
+      ? `/public/negocios/${encodeURIComponent(t)}/mozos/mesas/${encodeURIComponent(id)}`
+      : `${tenantPath(t)}/mesas/${encodeURIComponent(id)}`;
+    return request<Mesa>(path, { method: 'PUT', body: JSON.stringify(data) }, t);
   },
   deleteMesa: (arg1: any, arg2?: any) => {
     const t = arg2 !== undefined ? String(arg1) : getApiTenant();
@@ -254,7 +266,10 @@ export const api = {
     const t = arg3 !== undefined ? String(arg1) : getApiTenant();
     const id = arg3 !== undefined ? String(arg2) : String(arg1);
     const data = arg3 !== undefined ? arg3 : arg2;
-    return request<any>(`${tenantPath(t)}/pedidos/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(data) }, t);
+    const path = isPublicMozos()
+      ? `/public/negocios/${encodeURIComponent(t)}/mozos/pedidos/${encodeURIComponent(id)}`
+      : `${tenantPath(t)}/pedidos/${encodeURIComponent(id)}`;
+    return request<any>(path, { method: 'PUT', body: JSON.stringify(data) }, t);
   },
   deletePedido: (arg1: any, arg2?: any) => {
     const t = arg2 !== undefined ? String(arg1) : getApiTenant();
