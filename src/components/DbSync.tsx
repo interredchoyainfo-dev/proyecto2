@@ -48,9 +48,39 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
     // La API protegida solo se consulta después de restaurar una sesión válida.
     // El portal público puede seguir usando el catálogo legado de Firestore, pero no debe
     // generar peticiones operativas que el backend correctamente rechaza con 401.
-    if (authLoading || !user) {
+    if (authLoading) {
       setStatus('connecting');
       return;
+    }
+
+    // El menú público usa una lectura limitada y sin autenticación a SQLite.
+    // Así el pedido del cliente no depende de que Firestore tenga cuota disponible.
+    if (!user) {
+      let cancelled = false;
+      const pullPublicMenu = async () => {
+        try {
+          const menu = await api.getPublicMenu(activeNegocio);
+          if (cancelled) return;
+          useStore.setState({ products: menu.productos || [] });
+          const otherMesas = useMesasStore.getState().mesas.filter(
+            (mesa) => (mesa.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio
+          );
+          const publicMesas = (menu.mesas || []).map((mesa: any) => ({
+            ...mesa,
+            negocioId: activeNegocio,
+          }));
+          useMesasStore.setState({ mesas: [...otherMesas, ...publicMesas] });
+          setStatus('online');
+        } catch (error) {
+          if (!cancelled) console.warn(`[DbSync] No se pudo cargar el menú público de ${activeNegocio}:`, error);
+        }
+      };
+      pullPublicMenu();
+      const publicInterval = setInterval(pullPublicMenu, 30000);
+      return () => {
+        cancelled = true;
+        clearInterval(publicInterval);
+      };
     }
 
     // 2. Fuente de verdad operativa: SQLite por API autenticada.
