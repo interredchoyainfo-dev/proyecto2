@@ -94,7 +94,7 @@ export default function ClientMenu() {
       if (!pedidoId) {
         const tipoPedido = orderType === 'delivery' ? 'delivery' : orderType === 'local' ? 'salon' : 'mostrador';
         if (orderType === 'local' && mesaId) {
-          const existing = useMesasStore.getState().getPedidoByMesa(mesaId);
+          const existing = useMesasStore.getState().getPedidoByMesa(mesaId, getApiTenant());
           if (existing && !['entregado', 'cancelado'].includes(existing.estado)) {
             pedidoId = existing.id;
           } else {
@@ -102,6 +102,7 @@ export default function ClientMenu() {
               tipoPedido: 'salon',
               mesaId,
               clienteNombre: `Mesa ${mesas.find((m) => m.id === mesaId)?.numero}`,
+              negocioId: getApiTenant(),
             });
           }
         } else {
