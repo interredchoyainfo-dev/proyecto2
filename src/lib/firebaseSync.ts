@@ -91,8 +91,16 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
       getTenantCollection('mesas', targetTenant),
       (snap) => {
         if (!snap.empty) {
-          const mesas = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Mesa));
-          useMesasStore.setState({ mesas });
+          const incomingMesas = snap.docs.map((d) => ({ id: d.id, ...d.data(), negocioId: targetTenant } as Mesa));
+          const currentMesas = useMesasStore.getState().mesas;
+          const otherMesas = currentMesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() !== targetTenant);
+          const tenantMesas = new Map(
+            currentMesas
+              .filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() === targetTenant)
+              .map((m) => [m.id, m])
+          );
+          incomingMesas.forEach((mesa) => tenantMesas.set(mesa.id, mesa));
+          useMesasStore.setState({ mesas: [...otherMesas, ...tenantMesas.values()] });
         } else {
           seedInitialTenantCollectionIfEmpty('mesas', targetTenant);
         }
@@ -106,8 +114,23 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
       getTenantCollection('pedidos', targetTenant),
       (snap) => {
         if (!snap.empty) {
-          const pedidos = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Pedido));
-          useMesasStore.setState({ pedidos });
+          const incomingPedidos = snap.docs.map((d) => ({ id: d.id, ...d.data(), negocioId: targetTenant } as Pedido));
+          const currentPedidos = useMesasStore.getState().pedidos;
+          const otherPedidos = currentPedidos.filter((p) => (p.negocioId || 'giovanni').toLowerCase().trim() !== targetTenant);
+          const tenantPedidos = new Map(
+            currentPedidos
+              .filter((p) => (p.negocioId || 'giovanni').toLowerCase().trim() === targetTenant)
+              .map((p) => [p.id, p])
+          );
+          incomingPedidos.forEach((pedido) => {
+            const existing = tenantPedidos.get(pedido.id);
+            const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
+            const remoteTime = pedido.updatedAt ? Date.parse(pedido.updatedAt) : NaN;
+            if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
+              tenantPedidos.set(pedido.id, pedido);
+            }
+          });
+          useMesasStore.setState({ pedidos: [...otherPedidos, ...tenantPedidos.values()] });
         }
       },
       (err) => console.warn(`Firestore pedidos error (${targetTenant}):`, err)
