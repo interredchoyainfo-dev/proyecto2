@@ -182,6 +182,8 @@ export interface Mesa {
   capacidad: number;
   estado: MesaEstado;
   mozoAsignadoId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CashSession {
