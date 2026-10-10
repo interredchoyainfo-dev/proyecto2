@@ -1530,6 +1530,9 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
       if (!prod) {
         throw new Error(`PRODUCT_NOT_FOUND:${prodId}`);
       }
+      if (isPublicCustomerOrder && !prod.disponible) {
+        throw new Error(`PRODUCT_UNAVAILABLE:${prod.name}`);
+      }
 
       if (prod.stock !== null && prod.stock !== undefined && prod.stock < qty) {
         throw new Error(`STOCK_INSUFICIENTE:${prod.name}`);
