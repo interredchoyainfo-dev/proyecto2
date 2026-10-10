@@ -91,7 +91,7 @@ export default function MesasPage() {
   const handleOpenMesa = (mesa: Mesa) => {
     let pedido = getPedidoByMesa(mesa.id, currentNegocio);
     if (!pedido) {
-      createPedido({ tipoPedido: 'salon', mesaId: mesa.id });
+      createPedido({ tipoPedido: 'salon', mesaId: mesa.id, negocioId: currentNegocio });
     }
     setSelectedMesaId(mesa.id);
     setPanel('detalle');
