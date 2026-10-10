@@ -24,7 +24,7 @@ export default function TenantDetail() {
   const [editSlug, setEditSlug] = useState(tenant?.slug || '');
   const [editPlan, setEditPlan] = useState(tenant?.plan || 'trial');
   const [editAdminUser, setEditAdminUser] = useState(tenant?.adminUser || 'admin');
-  const [editAdminPassword, setEditAdminPassword] = useState(tenant?.adminPassword || 'admin');
+  const [editAdminPassword, setEditAdminPassword] = useState('');
   const [editThemePreset, setEditThemePreset] = useState(tenant?.theme?.preset || 'superadmin');
   const [editDescripcion, setEditDescripcion] = useState(tenant?.descripcion || '');
   const [editSubtitulo, setEditSubtitulo] = useState((tenant as any)?.subtitulo || 'TU LUGAR DEPORTIVO');
@@ -53,7 +53,7 @@ export default function TenantDetail() {
     setEditSlug(tenant.slug);
     setEditPlan(tenant.plan);
     setEditAdminUser(tenant.adminUser || 'admin');
-    setEditAdminPassword(tenant.adminPassword || 'admin');
+    setEditAdminPassword('');
     setEditThemePreset(tenant.theme?.preset || 'superadmin');
     setEditDescripcion(tenant.descripcion || '');
     setEditSubtitulo((tenant as any)?.subtitulo || 'TU LUGAR DEPORTIVO');
@@ -264,6 +264,7 @@ export default function TenantDetail() {
                     type="text"
                     value={editAdminPassword}
                     onChange={(e) => setEditAdminPassword(e.target.value)}
+                    placeholder="Dejar vacío para conservar la contraseña actual"
                     className="w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-white focus:outline-none focus:ring-2 focus:ring-violet-500 text-xs font-mono"
                   />
                 </div>
