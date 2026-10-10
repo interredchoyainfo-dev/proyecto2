@@ -101,7 +101,11 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
           const normalized = data.reservas.map((r: any) => ({
             ...r,
             espacioId: r.espacioId || r.courtId,
-            negocioId: r.negocioId || activeNegocio,
+            // The API response is already scoped to activeNegocio. Always use the slug
+            // used by the UI so tenant filtering cannot make rows disappear/reappear
+            // when the database stores the canonical business ID instead of its slug.
+            negocioId: activeNegocio,
+            _legacyFirestore: false,
           }));
           const current = useStore.getState().reservations;
           const otherRes = current.filter((r) => (r.negocioId || 'giovanni').toLowerCase() !== activeNegocio);
