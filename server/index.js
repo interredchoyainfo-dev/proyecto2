@@ -599,13 +599,17 @@ app.use('/api', (req, res, next) => {
   const isPublicOrderCreate =
     req.method === 'POST' &&
     /^\/api\/public\/negocios\/[^/]+\/pedidos\/?$/i.test(originalPath);
+  const isPublicMenuRead =
+    req.method === 'GET' &&
+    /^\/api\/public\/negocios\/[^/]+\/menu\/?$/i.test(originalPath);
   if (
     originalPath.startsWith('/api/auth/') ||
     originalPath === '/api/tenants' ||
     originalPath.startsWith('/api/tenants/') ||
     originalPath === '/api/health' ||
     isPublicReservationCreate ||
-    isPublicOrderCreate
+    isPublicOrderCreate ||
+    isPublicMenuRead
   ) {
     return next();
   }
@@ -672,6 +676,32 @@ app.put('/api/negocios/:negocioId/configuracion', (req, res) => {
     'UPDATE negocios SET nombre = ?, subtitulo = ?, descripcion = ?, whatsapp = ?, updatedAt = ? WHERE id = ?'
   ).run(nombre, subtitulo, descripcion, whatsapp, new Date().toISOString(), tenantId);
   res.json({ success: true, tenant: { id: tenantId, nombre, subtitulo, descripcion, whatsapp } });
+});
+
+// Menú público: solo devuelve productos disponibles y datos mínimos de mesas.
+app.get('/api/public/negocios/:negocioId/menu', (req, res) => {
+  const requested = String(req.params.negocioId || '').toLowerCase().trim();
+  const tenant = db.prepare(
+    'SELECT id, isActive FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1'
+  ).get(requested, requested);
+  if (!tenant || !tenant.isActive) {
+    return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: 'El negocio no existe o está suspendido.' });
+  }
+
+  const productos = db.prepare(`
+    SELECT id, name, price, category, icon, destinoComanda, disponible, description, imageUrl
+    FROM productos
+    WHERE negocioId = ? AND disponible = 1
+    ORDER BY category, name
+  `).all(tenant.id);
+  const mesas = db.prepare(`
+    SELECT id, numero, sector, capacidad, estado
+    FROM mesas
+    WHERE negocioId = ?
+    ORDER BY numero
+  `).all(tenant.id);
+  res.set('Cache-Control', 'no-store');
+  res.json({ productos, mesas });
 });
 
 // ==========================================
