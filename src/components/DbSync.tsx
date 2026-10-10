@@ -19,8 +19,6 @@ import {
   firebaseDeleteCliente,
   firebaseSaveEspacio,
   firebaseDeleteEspacio,
-  firebaseSaveCajaSesion,
-  firebaseSaveCajaMovimiento,
 } from '../lib/firebaseSync';
 
 interface DbSyncProps {
