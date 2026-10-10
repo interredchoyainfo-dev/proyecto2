@@ -297,21 +297,13 @@ export async function deleteOfertaDb(id: string) {
 }
 
 export async function persistCajaSesion(data: any) {
-  const tenant = getCurrentTenant();
-  firebaseSaveCajaSesion(data, tenant);
-  try {
-    await api.updateCajaSesion(data);
-  } catch {
-    /* offline */
-  }
+  // La API SQLite es la fuente de verdad para caja: evita duplicados y escrituras globales en Firestore.
+  const tenant = String(data.negocioId || getCurrentTenant()).toLowerCase();
+  return api.updateCajaSesion(tenant, data);
 }
 
 export async function persistCajaMovimiento(data: any) {
-  const tenant = getCurrentTenant();
-  firebaseSaveCajaMovimiento(data, tenant);
-  try {
-    await api.createCajaMovimiento(data);
-  } catch {
-    /* offline */
-  }
+  // El backend asigna el ID definitivo y valida que exista una caja abierta para este negocio.
+  const tenant = String(data.negocioId || getCurrentTenant()).toLowerCase();
+  return api.createCajaMovimiento(tenant, data);
 }
