@@ -87,7 +87,7 @@ export function CashControl() {
   };
 
   const handleClose = async () => {
-    if (savingAction) return;
+    if (savingAction || loadError) return;
     setSavingAction(true);
     try {
       await closeCash(closeAmount);
@@ -97,7 +97,7 @@ export function CashControl() {
   };
 
   const handleAddMov = async () => {
-    if (movAmount <= 0 || !movDesc.trim() || savingAction) return;
+    if (movAmount <= 0 || !movDesc.trim() || savingAction || loadError) return;
     setSavingAction(true);
     try {
       await addCashMovement({ type: movType, amount: movAmount, method: movMethod, description: movDesc });
@@ -214,7 +214,7 @@ export function CashControl() {
               />
               <button
                 onClick={handleAddMov}
-                disabled={savingAction}
+                disabled={savingAction || Boolean(loadError)}
                 className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium"
               >
                 {savingAction ? 'Guardando…' : 'Agregar'}
@@ -271,7 +271,7 @@ export function CashControl() {
               />
               <button
                 onClick={handleClose}
-                disabled={savingAction}
+                disabled={savingAction || Boolean(loadError)}
                 className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-medium"
               >
                 {savingAction ? 'Guardando…' : 'Cerrar Caja'}
