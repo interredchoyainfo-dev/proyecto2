@@ -69,9 +69,16 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
           const otherMesas = currentMesas.filter(
             (mesa) => (mesa.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio
           );
+          const syncNow = Date.now();
+          // Conservar únicamente cambios locales recientes mientras terminan de guardarse.
+          // Las mesas que ya no existen en SQLite no deben quedar pegadas en el navegador.
           const tenantMesas = new Map(
             currentMesas
               .filter((mesa) => (mesa.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
+              .filter((mesa) => {
+                const stamp = Date.parse(mesa.updatedAt || mesa.createdAt || '');
+                return Number.isFinite(stamp) && syncNow - stamp < 15000;
+              })
               .map((mesa) => [mesa.id, mesa])
           );
           (data.mesas || []).forEach((incoming: any) => {
@@ -79,7 +86,10 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
             const existing = tenantMesas.get(mesa.id);
             const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
             const remoteTime = mesa.updatedAt ? Date.parse(mesa.updatedAt) : NaN;
-            if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
+            const unchanged = existing && JSON.stringify(existing) === JSON.stringify(mesa);
+            if (unchanged) {
+              tenantMesas.set(mesa.id, existing);
+            } else if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
               tenantMesas.set(mesa.id, mesa);
             }
           });
@@ -90,9 +100,15 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
             const otherPedidos = currentPedidos.filter(
               (pedido) => (pedido.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio
             );
+            // No perpetuar pedidos locales que nunca llegaron a SQLite. Solo se retienen
+            // temporalmente los cambios recientes mientras termina el guardado asíncrono.
             const tenantPedidos = new Map(
               currentPedidos
                 .filter((pedido) => (pedido.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
+                .filter((pedido) => {
+                  const stamp = Date.parse(pedido.updatedAt || pedido.createdAt || '');
+                  return Number.isFinite(stamp) && Date.now() - stamp < 15000;
+                })
                 .map((pedido) => [pedido.id, pedido])
             );
             data.pedidos.forEach((incoming: any) => {
@@ -105,7 +121,11 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
               const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
               const remoteTime = pedido.updatedAt ? Date.parse(pedido.updatedAt) : NaN;
               // No reemplazar una edición local reciente por una respuesta de sondeo vieja.
-              if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
+              const serverFinal = ['entregado', 'cancelado'].includes(pedido.estado);
+              const unchanged = existing && JSON.stringify(existing) === JSON.stringify(pedido);
+              if (unchanged) {
+                tenantPedidos.set(pedido.id, existing);
+              } else if (!existing || serverFinal || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
                 tenantPedidos.set(pedido.id, pedido);
               }
             });
@@ -148,12 +168,17 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
             useStore.setState({ products: data.productos });
           }
         }
-        if (Array.isArray(data.mesas) && data.mesas.length > 0) {
+        if (Array.isArray(data.mesas)) {
           const currentMesas = useMesasStore.getState().mesas;
           const otherMesas = currentMesas.filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio);
+          const syncNow = Date.now();
           const tenantMesas = new Map(
             currentMesas
               .filter((m) => (m.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
+              .filter((m) => {
+                const stamp = Date.parse(m.updatedAt || m.createdAt || '');
+                return Number.isFinite(stamp) && syncNow - stamp < 15000;
+              })
               .map((m) => [m.id, m])
           );
           data.mesas.forEach((incoming: any) => {
@@ -167,12 +192,17 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
           });
           useMesasStore.setState({ mesas: [...otherMesas, ...tenantMesas.values()] });
         }
-        if (Array.isArray(data.pedidos) && data.pedidos.length > 0) {
+        if (Array.isArray(data.pedidos)) {
           const currentPedidos = useMesasStore.getState().pedidos;
           const otherPedidos = currentPedidos.filter((p) => (p.negocioId || 'giovanni').toLowerCase().trim() !== activeNegocio);
+          const syncNow = Date.now();
           const tenantPedidos = new Map(
             currentPedidos
               .filter((p) => (p.negocioId || 'giovanni').toLowerCase().trim() === activeNegocio)
+              .filter((p) => {
+                const stamp = Date.parse(p.updatedAt || p.createdAt || '');
+                return Number.isFinite(stamp) && syncNow - stamp < 15000;
+              })
               .map((p) => [p.id, p])
           );
           data.pedidos.forEach((incoming: any) => {
@@ -181,7 +211,11 @@ export default function DbSync({ negocioId: propNegocioId }: DbSyncProps) {
             // If local state has a newer mutation, do not roll it back with a stale poll response.
             const localTime = existing?.updatedAt ? Date.parse(existing.updatedAt) : NaN;
             const remoteTime = pedido.updatedAt ? Date.parse(pedido.updatedAt) : NaN;
-            if (!existing || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
+            const serverFinal = ['entregado', 'cancelado'].includes(pedido.estado);
+            const unchanged = existing && JSON.stringify(existing) === JSON.stringify(pedido);
+            if (unchanged) {
+              tenantPedidos.set(pedido.id, existing);
+            } else if (!existing || serverFinal || !Number.isFinite(localTime) || !Number.isFinite(remoteTime) || remoteTime >= localTime) {
               tenantPedidos.set(pedido.id, pedido);
             }
           });
