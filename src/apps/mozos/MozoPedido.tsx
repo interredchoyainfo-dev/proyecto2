@@ -98,7 +98,7 @@ export default function MozoPedido() {
         relatedPedidoId: pedido.id,
       });
     }
-    if (mesa) cerrarMesa(mesa.id);
+    if (mesa) cerrarMesa(mesa.id, negocioId || 'giovanni');
     else updatePedidoEstado(pedido.id, 'entregado');
     setShowPay(false);
     navigate(`/${negocioId}/app/mozos`);
