@@ -13,8 +13,6 @@ import {
   firebaseSaveMesa,
   firebaseSavePedido,
   firebaseDeletePedido,
-  firebaseSaveReserva,
-  firebaseDeleteReserva,
   firebaseSaveCliente,
   firebaseDeleteCliente,
   firebaseSaveEspacio,
