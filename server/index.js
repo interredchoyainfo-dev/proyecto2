@@ -602,6 +602,15 @@ app.use('/api', (req, res, next) => {
   const isPublicMenuRead =
     req.method === 'GET' &&
     /^\/api\/public\/negocios\/[^/]+\/menu\/?$/i.test(originalPath);
+  const isPublicMozosSync =
+    req.method === 'GET' &&
+    /^\/api\/public\/negocios\/[^/]+\/mozos\/sync\/?$/i.test(originalPath);
+  const isPublicMozosOrderUpdate =
+    req.method === 'PUT' &&
+    /^\/api\/public\/negocios\/[^/]+\/mozos\/pedidos\/[^/]+\/?$/i.test(originalPath);
+  const isPublicMozosMesaUpdate =
+    req.method === 'PUT' &&
+    /^\/api\/public\/negocios\/[^/]+\/mozos\/mesas\/[^/]+\/?$/i.test(originalPath);
   if (
     originalPath.startsWith('/api/auth/') ||
     originalPath === '/api/tenants' ||
@@ -609,7 +618,10 @@ app.use('/api', (req, res, next) => {
     originalPath === '/api/health' ||
     isPublicReservationCreate ||
     isPublicOrderCreate ||
-    isPublicMenuRead
+    isPublicMenuRead ||
+    isPublicMozosSync ||
+    isPublicMozosOrderUpdate ||
+    isPublicMozosMesaUpdate
   ) {
     return next();
   }
@@ -1684,8 +1696,17 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
   }
 });
 
-app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id'], (req, res) => {
-  const tenantId = resolveTenantId(req);
+app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id', '/api/public/negocios/:negocioId/mozos/pedidos/:id'], (req, res) => {
+  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
+  const isPublicMozos = /^\/api\/public\/negocios\/[^/]+\/mozos\/pedidos\/[^/]+\/?$/i.test(originalPath);
+  const requestedTenant = resolveTenantId(req);
+  const publicTenant = isPublicMozos
+    ? db.prepare('SELECT id, isActive FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1').get(requestedTenant, requestedTenant)
+    : null;
+  if (isPublicMozos && (!publicTenant || !publicTenant.isActive)) {
+    return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: 'El negocio no existe o está suspendido.' });
+  }
+  const tenantId = publicTenant?.id || requestedTenant;
   const { id } = req.params;
   const p = req.body;
   const existing = db.prepare('SELECT * FROM pedidos WHERE id = ? AND negocioId = ?').get(id, tenantId);
@@ -1871,8 +1892,17 @@ app.post(['/api/negocios/:negocioId/mesas', '/api/mesas'], (req, res) => {
   res.status(201).json(created);
 });
 
-app.put(['/api/negocios/:negocioId/mesas/:id', '/api/mesas/:id'], (req, res) => {
-  const tenantId = resolveTenantId(req);
+app.put(['/api/negocios/:negocioId/mesas/:id', '/api/mesas/:id', '/api/public/negocios/:negocioId/mozos/mesas/:id'], (req, res) => {
+  const originalPath = new URL(req.originalUrl || req.url || '/', 'http://localhost').pathname;
+  const isPublicMozos = /^\/api\/public\/negocios\/[^/]+\/mozos\/mesas\/[^/]+\/?$/i.test(originalPath);
+  const requestedTenant = resolveTenantId(req);
+  const publicTenant = isPublicMozos
+    ? db.prepare('SELECT id, isActive FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1').get(requestedTenant, requestedTenant)
+    : null;
+  if (isPublicMozos && (!publicTenant || !publicTenant.isActive)) {
+    return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: 'El negocio no existe o está suspendido.' });
+  }
+  const tenantId = publicTenant?.id || requestedTenant;
   const { id } = req.params;
   const m = req.body;
   const existing = db.prepare('SELECT * FROM mesas WHERE id = ? AND negocioId = ?').get(id, tenantId);
@@ -2076,6 +2106,36 @@ app.delete(['/api/negocios/:negocioId/ofertas/:id', '/api/ofertas/:id'], (req, r
 // ==========================================
 // 8. SNAPSHOT AISLADO POR TENANT (/api/negocios/:negocioId/sync)
 // ==========================================
+
+app.get('/api/public/negocios/:negocioId/mozos/sync', (req, res) => {
+  const requested = String(req.params.negocioId || '').toLowerCase().trim();
+  const tenant = db.prepare(
+    'SELECT id, isActive FROM negocios WHERE LOWER(id) = LOWER(?) OR LOWER(slug) = LOWER(?) LIMIT 1'
+  ).get(requested, requested);
+  if (!tenant || !tenant.isActive) {
+    return res.status(404).json({ success: false, code: 'TENANT_NOT_FOUND', message: 'El negocio no existe o está suspendido.' });
+  }
+
+  const tenantId = tenant.id;
+  const productos = db.prepare('SELECT * FROM productos WHERE negocioId = ? AND disponible = 1 ORDER BY category, name').all(tenantId);
+  const mesas = db.prepare('SELECT * FROM mesas WHERE negocioId = ? ORDER BY numero').all(tenantId);
+  const pedidosRaw = db.prepare('SELECT * FROM pedidos WHERE negocioId = ? ORDER BY createdAt DESC').all(tenantId);
+  const itemsStmt = db.prepare('SELECT * FROM pedido_items WHERE pedidoId = ?');
+  const pedidos = pedidosRaw.map((pedido) => ({ ...pedido, items: itemsStmt.all(pedido.id) }));
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    tenantId,
+    productos,
+    mesas,
+    pedidos,
+    espacios: [],
+    reservas: [],
+    clientes: [],
+    ofertas: [],
+    cajaSesion: null,
+    cajaMovimientos: [],
+  });
+});
 
 app.get(['/api/negocios/:negocioId/sync', '/api/sync'], (req, res) => {
   const tenantId = resolveTenantId(req);
