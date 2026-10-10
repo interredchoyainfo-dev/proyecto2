@@ -160,6 +160,22 @@ try {
   assert.equal(publicOrderRetry.status, 200, 'retrying a public order must be idempotent');
   assert.equal((await publicOrderRetry.json()).order.duplicate, true);
 
+  // La vista de mozos debe leer pedidos y mesas sin login y permitir actualizar el estado.
+  const publicMozosSyncResponse = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/sync`);
+  assert.equal(publicMozosSyncResponse.status, 200, 'public waiter route must load its operational snapshot without a token');
+  const publicMozosSnapshot = await publicMozosSyncResponse.json();
+  const publicMozosOrder = publicMozosSnapshot.pedidos.find((order) => order.id === publicOrderPayload.id);
+  assert.ok(publicMozosOrder, 'public waiter snapshot must include the newly created order');
+  assert.ok(publicMozosSnapshot.mesas.length > 0, 'public waiter snapshot must include tables');
+
+  const publicMozosUpdate = await fetch(`${baseUrl}/api/public/negocios/giovanni/mozos/pedidos/${encodeURIComponent(publicOrderPayload.id)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...publicMozosOrder, estado: 'en_preparacion' }),
+  });
+  assert.equal(publicMozosUpdate.status, 200, 'public waiter route must update order status without a token');
+  assert.equal((await publicMozosUpdate.json()).estado, 'en_preparacion');
+
   const ordersAfterPublicCreate = await fetch(`${baseUrl}/api/negocios/giovanni/pedidos`, {
     headers: {
       authorization: `Bearer ${tenantLogin.token}`,
