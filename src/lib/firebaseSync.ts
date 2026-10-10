@@ -71,21 +71,7 @@ export function initFirestoreRealtimeSync(rawTenantId?: string) {
   console.log(`[MultiTenant Firestore] Sincronizando en tiempo real con negocio: "${targetTenant}"`);
 
   try {
-    // 1. PRODUCTOS DEL NEGOCIO
-    const unsubProductos = onSnapshot(
-      getTenantCollection('productos', targetTenant),
-      (snap) => {
-        if (!snap.empty) {
-          const products = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Product));
-          useStore.setState({ products });
-        } else {
-          seedInitialTenantCollectionIfEmpty('productos', targetTenant);
-        }
-      },
-      (err) => console.warn(`Firestore productos error (${targetTenant}):`, err)
-    );
-    unsubscribes.push(unsubProductos);
-
+    // El catálogo público y operativo se lee desde SQLite/API para no depender de cuota Firestore.
     // Mesas y pedidos operativos se sincronizan desde la API SQLite autenticada.
     // No abrir listeners Firestore para estas colecciones: evita lecturas duplicadas y
     // que una copia antigua sobrescriba el circuito único de pedidos.
