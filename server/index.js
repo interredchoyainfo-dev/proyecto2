@@ -481,31 +481,51 @@ app.put('/api/tenants/:id', (req, res) => {
   const now = new Date().toISOString();
   const theme = b.theme ? JSON.stringify(b.theme) : cur.themeJson;
   const modulos = b.modulos ? JSON.stringify(b.modulos) : cur.modulosJson;
+  const nextName = b.nombre ?? cur.nombre;
+  const nextAdminUser = String(b.adminUser ?? cur.adminUser ?? '').trim() || cur.adminUser;
+  // Un campo de contraseña vacío significa conservar la contraseña actual.
+  const suppliedPassword = typeof b.adminPassword === 'string' ? b.adminPassword.trim() : '';
+  const nextAdminPassword = suppliedPassword || cur.adminPassword;
+  const nextActive = b.isActive !== undefined ? (b.isActive ? 1 : 0) : cur.isActive;
 
-  db.prepare(`
-    UPDATE negocios SET
-      nombre = ?, subtitulo = ?, descripcion = ?, whatsapp = ?, plan = ?,
-      themeJson = ?, modulosJson = ?, adminUser = ?, adminPassword = ?,
-      isActive = ?, updatedAt = ?
-    WHERE id = ?
-  `).run(
-    b.nombre ?? cur.nombre,
-    b.subtitulo ?? cur.subtitulo,
-    b.descripcion ?? cur.descripcion,
-    b.whatsapp ?? cur.whatsapp,
-    b.plan ?? cur.plan,
-    theme,
-    modulos,
-    b.adminUser ?? cur.adminUser,
-    b.adminPassword ?? cur.adminPassword,
-    b.isActive !== undefined ? (b.isActive ? 1 : 0) : cur.isActive,
-    now,
-    cur.id
-  );
+  const adminRow = db.prepare(
+    "SELECT id, passwordHash FROM usuarios WHERE negocioId = ? AND rol = 'admin' ORDER BY createdAt LIMIT 1"
+  ).get(cur.id);
 
+  const tx = db.transaction(() => {
+    db.prepare(`
+      UPDATE negocios SET
+        nombre = ?, subtitulo = ?, descripcion = ?, whatsapp = ?, plan = ?,
+        themeJson = ?, modulosJson = ?, adminUser = ?, adminPassword = ?,
+        isActive = ?, updatedAt = ?
+      WHERE id = ?
+    `).run(
+      nextName,
+      b.subtitulo ?? cur.subtitulo,
+      b.descripcion ?? cur.descripcion,
+      b.whatsapp ?? cur.whatsapp,
+      b.plan ?? cur.plan,
+      theme,
+      modulos,
+      nextAdminUser,
+      nextAdminPassword,
+      nextActive,
+      now,
+      cur.id
+    );
+
+    // Mantener sincronizadas las credenciales de inicio de sesión con el negocio.
+    if (adminRow) {
+      const nextPasswordHash = suppliedPassword ? hashPassword(suppliedPassword) : adminRow.passwordHash;
+      db.prepare(
+        'UPDATE usuarios SET email = ?, nombre = ?, passwordHash = ?, updatedAt = ? WHERE id = ?'
+      ).run(nextAdminUser, `Administrador de ${nextName}`, nextPasswordHash, now, adminRow.id);
+    }
+  });
+
+  tx();
   res.json({ success: true, message: 'Negocio actualizado correctamente.' });
 });
-
 app.delete('/api/tenants/:id', (req, res) => {
   const target = req.params.id.toLowerCase();
   if (target === 'giovanni') {
