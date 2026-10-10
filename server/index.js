@@ -1516,7 +1516,12 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
   const tenantId = tenantRow?.id || requestedTenant;
   const p = req.body || {};
   const items = Array.isArray(p.items) ? p.items : [];
-  if (!items.length) {
+  // Los borradores de mesa del mozo se guardan aunque todavía no tengan ítems.
+  // Esto evita que una navegación/sincronización deje un pedido solo en memoria.
+  const isEmptyWaiterDraft = isPublicMozosOrderCreate &&
+    p.estado === 'borrador' && p.tipoPedido === 'salon' && Boolean(p.mesaId) &&
+    items.length === 0;
+  if (!items.length && !isEmptyWaiterDraft) {
     return res.status(400).json({ success: false, code: 'EMPTY_ORDER', message: 'El pedido debe contener al menos un producto.' });
   }
   if (isPublicOrder && p.mesaId) {
@@ -1656,7 +1661,7 @@ app.post(['/api/negocios/:negocioId/pedidos', '/api/pedidos', '/api/public/negoc
     }
 
     // Un pedido público de mesa debe ocuparla desde el servidor; el cliente no modifica mesas protegidas.
-    if (isPublicOrder && p.tipoPedido === 'salon' && p.mesaId) {
+    if (isPublicOrder && p.tipoPedido === 'salon' && p.mesaId && items.length > 0) {
       db.prepare("UPDATE mesas SET estado = 'ocupada', updatedAt = ? WHERE id = ? AND negocioId = ?")
         .run(now, p.mesaId, tenantId);
     }
@@ -1727,6 +1732,8 @@ app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id', '/api/publi
   if (!existing) return res.status(404).json({ success: false, message: 'Pedido no encontrado' });
 
   const now = new Date().toISOString();
+  const nextState = p.estado || existing.estado;
+  const nextMesaId = p.mesaId !== undefined ? p.mesaId : existing.mesaId;
   const updateTx = db.transaction(() => {
     db.prepare(`
       UPDATE pedidos
@@ -1740,7 +1747,7 @@ app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id', '/api/publi
       p.clienteNombre !== undefined ? p.clienteNombre : existing.clienteNombre,
       p.clienteTelefono !== undefined ? p.clienteTelefono : existing.clienteTelefono,
       p.direccionDelivery !== undefined ? p.direccionDelivery : existing.direccionDelivery,
-      p.estado || existing.estado,
+      nextState,
       p.total !== undefined ? Number(p.total) : existing.total,
       now,
       id,
@@ -1769,6 +1776,28 @@ app.put(['/api/negocios/:negocioId/pedidos/:id', '/api/pedidos/:id', '/api/publi
           item.destinoComanda || 'cocina',
           item.enviadoCocina === true || item.enviadoCocina === 1 ? 1 : 0
         );
+      }
+    }
+
+    // El estado del pedido y la ocupación de la mesa se confirman juntos en SQLite.
+    // Así una mesa cobrada no vuelve a quedar ocupada por una actualización parcial.
+    if (isPublicMozos) {
+      const finalizado = ['entregado', 'cancelado'].includes(nextState);
+      const hasItems = Array.isArray(p.items)
+        ? p.items.length > 0
+        : Number(db.prepare('SELECT COUNT(*) AS total FROM pedido_items WHERE pedidoId = ?').get(id).total) > 0;
+
+      if (finalizado && existing.mesaId) {
+        const otherActive = db.prepare(
+          "SELECT COUNT(*) AS total FROM pedidos WHERE negocioId = ? AND mesaId = ? AND id <> ? AND estado NOT IN ('entregado', 'cancelado')"
+        ).get(tenantId, existing.mesaId, id).total;
+        if (Number(otherActive) === 0) {
+          db.prepare("UPDATE mesas SET estado = 'libre', updatedAt = ? WHERE id = ? AND negocioId = ?")
+            .run(now, existing.mesaId, tenantId);
+        }
+      } else if (!finalizado && nextMesaId && hasItems) {
+        db.prepare("UPDATE mesas SET estado = 'ocupada', updatedAt = ? WHERE id = ? AND negocioId = ?")
+          .run(now, nextMesaId, tenantId);
       }
     }
   });
